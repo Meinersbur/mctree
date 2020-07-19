@@ -54,28 +54,22 @@ class Loop:
         return '\n'.join(self.to_lines(0))
 
     def to_lines(self,indent:int = 0):
-        result = []
-
         block = False
         subindent = indent
         if not self.isroot:
             block = len(self.subloops) > 1
-            result += [
-                "    "*indent + f"#pragma clang loop id({self.name})",
-                "    "*indent + "for (...)" + (" {" if block else "")
-                ]
+            yield "    "*indent + f"#pragma clang loop id({self.name})"
+            yield "    "*indent + "for (...)" + (" {" if block else "")
             subindent += 1
 
         if self.subloops:
             for subloop in self.subloops:
-                result += subloop.to_lines(indent=subindent)
+                yield from subloop.to_lines(indent=subindent)
         else:
-            result += ["    "*subindent + "code;"]
+            yield "    "*subindent + "code;"
 
         if block:
-            result += ["    "*indent + "}"]
-
-        return result
+            yield "    "*indent + "}"
 
 
 # Replace oldloop with newloop in loop nest while cloning all loop to the path there
@@ -240,21 +234,18 @@ def gen_input() -> Loop:
 
 
 def as_dot(baseexperiment: Experiment):
-    lines = [
-        "digraph G {",
-        "rankdir=LR;"
-        ]
+    yield "digraph G {"
+    yield "rankdir=LR;"
 
     for experiment in baseexperiment.derivitives_recursive():
         desc = ''.join(l + "\\l" for l in experiment.to_lines())
-        lines += [f'n{id(experiment)}[shape=box penwidth=2 fillcolor="azure:powderblue"style="filled" gradientangle=315 fontname="Calibri Light" label="{desc}"];']
+        yield f'n{id(experiment)}[shape=box penwidth=2 fillcolor="azure:powderblue"style="filled" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
 
         if parent := experiment.derived_from:
-            lines += [f"n{id(parent)} -> n{id(experiment)};"]
-        lines += [""]
+            yield f"n{id(parent)} -> n{id(experiment)};"
+        yield ""
 
-    lines += ["}"]
-    return lines
+    yield "}"
 
 
 def main() -> int:
@@ -283,8 +274,7 @@ def main() -> int:
     root = Experiment(example,[])
     expand_searchtree(root,remaining_depth=maxdepth)
     
-    dotlines = as_dot(root)
-    for line in dotlines:
+    for line in as_dot(root):
         print(line)
 
     return 0
