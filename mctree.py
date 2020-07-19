@@ -51,7 +51,7 @@ class Loop:
         return result
 
     def __str__(self) -> str :
-        return '\n'.join(slf.to_lines(0))
+        return '\n'.join(self.to_lines(0))
 
     def to_lines(self,indent:int = 0):
         result = []
@@ -119,7 +119,6 @@ class Experiment:
         subexp.derived_from = self
         self.derivitives.append(subexp)
 
-
     def derivitives_recursive(self):
         yield self
         for n in self.derivitives:
@@ -127,7 +126,6 @@ class Experiment:
 
     def __str__(self):
         return '\n'.join(self.to_lines())
-
 
     def to_lines(self):
         if self.pragmalist:
@@ -147,7 +145,6 @@ class Tiling:
         if len(loop.subloops) == 1:
              yield from Tiling.do_tile(loop.subloops[0])
 
-
     @staticmethod
     def do_tile(loop):
         for subfloors,subtiles,subbody,subsizes in Tiling.do_subtile(loop):
@@ -164,13 +161,13 @@ class Tiling:
             for tile in tiles:
                 cur.subloops = [tile]
                 cur = tile
-            tile.subloops = body
+            cur.subloops = body
 
             floorids = [floor.name for floor in floors]
             tileids = [tile.name for tile in tiles]
             sizes = [str(s) for s in sizes]
-            pragma = f"#pragma clang transform tile on({floors[0].name}) sizes({','.join(sizes)}) floor_ids({','.join(floorids)}) tile_ds({','.join(tileids)})"
-            yield cur,[pragma]
+            pragma = f"#pragma clang transform tile on({loop.name}) sizes({','.join(sizes)}) floor_ids({','.join(floorids)}) tile_ds({','.join(tileids)})"
+            yield floors[0],[pragma]
 
 
 class Thrading:
@@ -185,12 +182,12 @@ class Thrading:
 class Interchange:
     @staticmethod
     def gen_interchange(loop: Loop):
-        nests = loop.perfectnest()
-        for perm in itertools.permutations(nests):
+        orignest = loop.perfectnest()
+        for perm in itertools.permutations(orignest):
             if perm[0] == loop:
                 continue
-           
-           
+
+            nests = orignest
             while perm[-1] == nests[-1]:
                 perm = perm[:-1]
                 nests = nests[:-1]
