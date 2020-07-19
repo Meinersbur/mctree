@@ -223,7 +223,7 @@ def expand_searchtree(baseexperiment: Experiment, remaining_depth: int):
         return
     derive_expriments(baseexperiment)
     for e in baseexperiment.derivitives:
-        expand_searchtree(e,remaining_depth= remaining_depth-1)
+        expand_searchtree(e,remaining_depth=remaining_depth-1)
 
 
 def gen_input() -> Loop:
@@ -239,7 +239,7 @@ def as_dot(baseexperiment: Experiment):
 
     for experiment in baseexperiment.derivitives_recursive():
         desc = ''.join(l + "\\l" for l in experiment.to_lines())
-        yield f'n{id(experiment)}[shape=box penwidth=2 fillcolor="azure:powderblue"style="filled" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
+        yield f'n{id(experiment)}[shape=box color="grey30" penwidth=2 fillcolor="azure:powderblue" style="filled,rounded" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
 
         if parent := experiment.derived_from:
             yield f"n{id(parent)} -> n{id(experiment)};"
