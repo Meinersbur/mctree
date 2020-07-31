@@ -1,9 +1,11 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import sys
 import argparse
 import itertools
-
+import json
+import pathlib
 
 class Loop:
     numloopssofar = 0
@@ -24,6 +26,12 @@ class Loop:
       if not isroot:
         self.name = name
       self.subloops = []
+      self.filename=None
+      self.line = None
+      self.column = None
+      self.function=None
+      self.entry=None
+      self.exit=None
 
     def perfectnest(self):
         result = [self]
@@ -33,13 +41,18 @@ class Loop:
             result.append(result[-1].subloops[0])
         return result
 
+    def subloops_recursive(self):
+        yield self
+        for n in self.subloops:
+            yield from n.subloops_recursive()
+
     def new_subloop(self):
         newloop =  Loop.createLoop()
         self.subloops.append(newloop)
         return newloop
 
     def add_subloop(self,subloop):
-        self.subloop.append(subloop)
+        self.subloops.append(subloop)
         return subloop
 
     def clone(self):
@@ -48,6 +61,12 @@ class Loop:
         else:
             result = Loop(isroot=False,name=self.name)
         result.subloops = self.subloops.copy()
+        result.filename=self.filename
+        result.line = self.line
+        result.column = self.column
+        result.function=self.function
+        result.entry=self.entry
+        result.exit=self.exit
         return result
 
     def __str__(self) -> str :
@@ -59,7 +78,10 @@ class Loop:
         if not self.isroot:
             block = len(self.subloops) > 1
             yield "    "*indent + f"#pragma clang loop id({self.name})"
-            yield "    "*indent + "for (...)" + (" {" if block else "")
+            loc = ""
+            if self.filename:
+                loc = f" /* {self.filename}:{self.line}:{self.column} */"
+            yield "    "*indent + "for (...)" + (" {" if block else "") + loc
             subindent += 1
 
         if self.subloops:
@@ -91,6 +113,22 @@ def gist(root,childids,oldloop,newloop):
     return newroot
 
 
+def json_to_loops(topmost):
+    result = Loop.createRoot()
+    for tm in topmost:
+        loop = Loop.createLoop()
+        loop.filename = pathlib.Path(tm["filename"])
+        loop.line = tm["line"]
+        loop.column = tm["column"]
+        loop.entry = tm["entry"]
+        loop.exit = tm["exit"]
+        loop.function = tm["function"]
+        sublooproot = json_to_loops(tm["subloops"])
+        loop.subloops = sublooproot.subloops
+        result.add_subloop(loop)
+    return result
+
+
 def transform_node(root, callback):
   def do_transform_node(loop, childids,  callback):
     if not loop.isroot:
@@ -102,21 +140,11 @@ def transform_node(root, callback):
   yield from do_transform_node(root,[],callback)
 
 
-class Experiment:
+class LoopNestExperiment:
     def __init__(self,loopnest,pragmalist):
         self.loopnest = loopnest
         self.pragmalist = pragmalist
         self.derived_from = None
-        self.derivitives = []
-    
-    def add_subexperiment(self,subexp):
-        subexp.derived_from = self
-        self.derivitives.append(subexp)
-
-    def derivitives_recursive(self):
-        yield self
-        for n in self.derivitives:
-            yield from n.derivitives_recursive()
 
     def __str__(self):
         return '\n'.join(self.to_lines())
@@ -125,8 +153,47 @@ class Experiment:
         if self.pragmalist:
             return self.pragmalist
         else:
-            return  self.loopnest.to_lines(0)
-    
+            return self.loopnest.to_lines(0)
+
+
+class Experiment:
+    def __init__(self):
+        self.nestexperiments = []
+        self.derived_from = None
+        self.derivatives = []
+
+    def clone(self):
+        result = Experiment()
+        result.nestexperiments = self.nestexperiments.copy()
+        return result
+        
+    def add_subexperiment(self,subexp):
+        subexp.derived_from = self
+        self.derivatives.append(subexp)
+
+    def derivatives_recursive(self):
+        yield self
+        for n in self.derivatives:
+            yield from n.derivatives_recursive()
+
+    def __str__(self):
+        return '\n'.join(self.to_lines())
+
+    def to_lines(self):
+        isFirst = True
+        for nestex in self.nestexperiments:
+            if not isFirst:
+                yield ""
+            funcname = None
+            for n in nestex.loopnest.subloops_recursive():
+                if n.function:
+                    funcname = n.function
+                    break
+            if funcname:
+                yield "Function " + funcname + ":"
+            for x in nestex.to_lines():
+                yield "  " + x
+            isFirst=False
 
 class Tiling:
     tilesizes = [2,4]
@@ -211,33 +278,42 @@ def do_transformations(loop):
         yield from Interchange.gen_interchange(loop)
 
 
-def derive_expriments(baseexperiment: Experiment):
-    oldroot = baseexperiment.loopnest # type: Loop
-    for newsubloop,pragma,newroot in transform_node(oldroot, do_transformations):
-        x = Experiment(newroot, baseexperiment.pragmalist + pragma)
-        baseexperiment.add_subexperiment(x)
+def derive_loopnest_expriments(searchspacenode: Experiment, i: int):
+   baseexperiment = searchspacenode.nestexperiments[i]
+
+   oldroot = baseexperiment.loopnest # type: Loop
+   for newsubloop,pragma,newroot in transform_node(oldroot, do_transformations):
+        x = LoopNestExperiment(newroot, baseexperiment.pragmalist + pragma)
+        x.derived_from = baseexperiment
+
+        y = searchspacenode.clone()
+        y.nestexperiments[i] = x
+        searchspacenode.add_subexperiment(y)
+
+
+def derive_expriments(searchspacenode: Experiment):
+    for i in range(len(searchspacenode.nestexperiments)):
+        derive_loopnest_expriments(searchspacenode, i)
+    #for loopnextconfig in searchspacenode.loopnests:
+    #    derive_loopnest_expriments(searchspacenode, loopnextconfig)
 
 
 def expand_searchtree(baseexperiment: Experiment, remaining_depth: int):
     if remaining_depth <= 0:
         return
+
     derive_expriments(baseexperiment)
-    for e in baseexperiment.derivitives:
+    for e in baseexperiment.derivatives:
         expand_searchtree(e,remaining_depth=remaining_depth-1)
 
 
-def gen_input() -> Loop:
-    example = Loop.createRoot()
-    example.new_subloop()
-    example.new_subloop().new_subloop()
-    return example
 
 
-def as_dot(baseexperiment: Experiment):
+def as_dot(baseexperiment: LoopNestExperiment):
     yield "digraph G {"
     yield "rankdir=LR;"
 
-    for experiment in baseexperiment.derivitives_recursive():
+    for experiment in baseexperiment.derivatives_recursive():
         desc = ''.join(l + "\\l" for l in experiment.to_lines())
         yield f'n{id(experiment)}[shape=box color="grey30" penwidth=2 fillcolor="azure:powderblue" style="filled,rounded" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
 
@@ -248,38 +324,109 @@ def as_dot(baseexperiment: Experiment):
     yield "}"
 
 
-def main() -> int:
-    global tiling_enabled,threading_enabled
-    parser = argparse.ArgumentParser(description="Loop transformation search tree proof-of-concept")
-    parser.add_argument('--maxdepth', type=int, default=2)
+# Decorator
+commands = {}
+def subcommand(name):
+  def command_func(_func):
+    global commands
+    commands[name] = _func
+    return _func
+  return command_func
 
-    parser.add_argument('--tiling', action='store_true', default=True)
-    parser.add_argument('--tiling-sizes', nargs='*', type=int, default=[2,4])
 
-    parser.add_argument('--threading', action='store_true', default=True)
+def add_boolean_argument(parser, name, default=False, dest=None, help=None):
+    """Add a boolean argument to an ArgumentParser instance."""
 
-    parser.add_argument('--interchange', action='store_true', default=True)
+    for i in range(2):
+        if name[0] == '-':
+            name = name[1:]
 
-    args = parser.parse_args()
-    maxdepth  = args.maxdepth
+    destname = dest or name.replace('-','_')
 
-    tiling_enabled = args.tiling
-    Tiling.tilesizes = args.tiling_sizes
+    onhelptext = None
+    offhelptext = None
+    if help is not None:
+        onhepltext = help + (" (default)" if default else "")
+        offhelptext = "Disable " + help + (" (default)" if default else "")
 
-    threading_enabled = args.threading
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--' + name, dest=destname, action='store_true', help=onhelptext)
+    group.add_argument('--no-' + name, dest=destname, action='store_false', help=offhelptext)
+    defaults = {destname: default}
+    parser.set_defaults(**defaults)
 
-    interchange_enabled = args.interchange
 
-    example = gen_input()
-    root = Experiment(example,[])
-    expand_searchtree(root,remaining_depth=maxdepth)
+
+@subcommand("example")
+def example(parser,args):
+  if parser:
+    pass
+  if args:  
+    example = Loop.createRoot()
+    example.new_subloop()
+    example.new_subloop().new_subloop()
+
+    root = Experiment()
+    root.nestexperiments.append( LoopNestExperiment(example,[]))
+    expand_searchtree(root,remaining_depth=args.maxdepth)
     
     for line in as_dot(root):
         print(line)
-
     return 0
 
 
+@subcommand("jsonfile")
+def jsonfile(parser,args):
+  if parser:
+    parser.add_argument('filename',nargs='+')
+  if args:  
+    root = Experiment()
+    for fn in args.filename:
+        with pathlib.Path(fn).open() as fo:
+            data = json.load(fo)
+        loopnests = data["loopnests"]
+        for ln in loopnests:
+            nestroot = json_to_loops(ln["topmost"])
+            exroot = LoopNestExperiment(nestroot,[])
+            root.nestexperiments.append(exroot)
+
+    expand_searchtree(root,remaining_depth=args.maxdepth)
+    
+    for line in as_dot(root):
+        print(line)
+    return 0
+    
+
+def main(argv:str) -> int:
+    global tiling_enabled,threading_enabled,interchange_enabled
+    parser = argparse.ArgumentParser(description="Loop transformation search tree proof-of-concept", allow_abbrev=False)
+
+    parser.add_argument('--maxdepth', type=int, default=2)
+    add_boolean_argument(parser, "--tiling", default=True)
+    parser.add_argument('--tiling-sizes', nargs='*', type=int, default=[2,4])
+    add_boolean_argument(parser, "--threading", default=True)
+    add_boolean_argument(parser, "--interchange", default=True)
+    
+
+    subparsers = parser.add_subparsers(dest='subcommand')
+    for cmd,func in commands.items():
+        subparser = subparsers.add_parser(cmd)
+        func(parser=subparser,args=None)
+    args = parser.parse_args(str(v) for v in argv[1:])
+
+    tiling_enabled = args.tiling
+    Tiling.tilesizes = args.tiling_sizes
+    threading_enabled = args.threading
+    interchange_enabled = args.interchange
+
+    cmdlet = commands.get(args.subcommand)
+    if not cmdlet:
+       die("No command?")
+    return cmdlet(parser=None,args=args)
+
+
+
+
 if __name__ == '__main__':
-    if errcode := main():
+    if errcode := main(argv=sys.argv):
         exit(errcode)
