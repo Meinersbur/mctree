@@ -3,12 +3,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#ifdef WIN32
 #include <unistd.h>
+#endif
 #include <assert.h>
 #include <time.h>
+#ifdef WIN32
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sched.h>
+#endif
 #include <math.h>
 #ifdef _OPENMP
 # include <omp.h>
@@ -62,7 +66,9 @@ struct polybench_data_ptrs
   int nb_entries;
   int nb_avail_entries;
 };
+#ifdef POLYBENCH_ENABLE_INTARRAY_PAD
 static struct polybench_data_ptrs* _polybench_alloc_table = NULL;
+#endif
 static size_t polybench_inter_array_padding_sz = 0;
 
 /* Timer code (gettimeofday). */
@@ -504,6 +510,21 @@ void check_alloc_table_state()
 
 #endif // !POLYBENCH_ENABLE_INTARRAY_PAD
 
+#ifdef _WIN32
+static int posix_memalign(void **ptr, size_t align, size_t size)
+{
+    int saved_errno = errno;
+    void *p = _aligned_malloc(size, align);
+    if (p == NULL)
+    {
+        errno = saved_errno;
+        return ENOMEM;
+    }
+
+    *ptr = p;
+    return 0;
+}
+#endif
 
 static
 void*

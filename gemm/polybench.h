@@ -75,6 +75,8 @@
 #  define POLYBENCH_ARRAY(x) *x
 #  ifdef POLYBENCH_ENABLE_INTARRAY_PAD
 #   define POLYBENCH_FREE_ARRAY(x) polybench_free_data((void*)x);
+#  elif _WIN32
+#   define POLYBENCH_FREE_ARRAY(x) _aligned_free(x);
 #  else
 #   define POLYBENCH_FREE_ARRAY(x) free((void*)x);
 #  endif
