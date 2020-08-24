@@ -184,6 +184,7 @@ class Experiment:
         self.duration = None
         self.exppath = None
         self.expnumber = None
+        self.depth = None
 
     def clone(self):
         result = Experiment()
@@ -192,6 +193,7 @@ class Experiment:
 
     def add_subexperiment(self, subexp):
         subexp.derived_from = self
+        subexp.depth = self.depth+1
         self.derivatives.append(subexp)
 
     def derivatives_recursive(self):
@@ -339,7 +341,7 @@ def expand_searchtree(baseexperiment: Experiment, remaining_depth: int):
     if remaining_depth <= 0:
         return
 
-    if not   baseexperiment.has_expanded :
+    if not baseexperiment.has_expanded:
         derive_expriments(baseexperiment)
         baseexperiment.has_expanded = True
     for e in baseexperiment.derivatives:
@@ -463,8 +465,9 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
     cmdline += ['-mllvm', '-polly', '-mllvm', '-polly-process-unprofitable', '-mllvm', '-polly-position=early', '-mllvm', '-polly-reschedule=0', '-mllvm', '-polly-pattern-matching-based-opts=0']
     if debuginfo:
         cmdline += ['-g', '-gcolumn-info'] # FIXME: loopnests.json overwritten if multiple files passed to clang
-    #cmdline += ['-fopenmp']
-    cmdline += ['-l', r"C:\Users\meinersbur\build\llvm-project\release\lib\libomp.dll.lib", '-mllvm', '-polly-omp-backend=LLVM']
+    cmdline += ['-fopenmp']
+    #cmdline += ['-l', r"C:\Users\meinersbur\build\llvm-project\release\lib\libomp.dll.lib"]
+    cmdline += ['-mllvm', '-polly-omp-backend=LLVM']
     cmdline += ['-Werror=pass-failed']
     cmdline += extraflags
     cmdline += ['-o', outfile]
@@ -472,7 +475,7 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
 
 
 
-def extract_loopnests(tempdir,ccargs):
+def extract_loopnests(tempdir,ccargs,execargs):
     print("Extract loop nests...")
 
     extractloopnest = tempdir / 'base'
@@ -486,19 +489,21 @@ def extract_loopnests(tempdir,ccargs):
     root = read_json(files=[loopnestfile])
 
     print("Time the output...")
-    p = invoke.diag(exefile, cwd=extractloopnest, onerror=invoke.Invoke.EXCEPTION)
+    p = invoke.diag(exefile, timeout=execargs.timeout, appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path}, cwd=extractloopnest, onerror=invoke.Invoke.EXCEPTION)
     root.duration = p.walltime
     root.exppath = extractloopnest
     root.expnumber = 0
+    root.depth=1
     return root
 
 
 expnumber = 1
-def run_experiment(tempdir:pathlib.Path,ccargs,experiment: Experiment,timeout):
+def run_experiment(tempdir:pathlib.Path, experiment: Experiment, ccargs,execargs,writedot:bool,root:Experiment):
     global expnumber
     expdir = tempdir / f"experiment{expnumber}"
     experiment.expnumber = expnumber
     logfile =  expdir / 'desc.txt'
+    dotfile = expdir / 'graph.dot'
     expnumber +=1 
     expdir.mkdir(parents=True,exist_ok=True)
     experiment.exppath = expdir
@@ -563,7 +568,7 @@ def run_experiment(tempdir:pathlib.Path,ccargs,experiment: Experiment,timeout):
         return
 
     try:
-        p = invoke.diag(exefile, cwd=expdir, onerror=invoke.Invoke.EXCEPTION,timeout=timeout, std_prefixed=expdir / 'exec.txt')
+        p = invoke.diag(exefile, cwd=expdir, onerror=invoke.Invoke.EXCEPTION,timeout=execargs.timeout, std_prefixed=expdir / 'exec.txt', appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path})
     except subprocess.TimeoutExpired:
         # Assume failure
         experiment.duration = math.inf
@@ -572,6 +577,11 @@ def run_experiment(tempdir:pathlib.Path,ccargs,experiment: Experiment,timeout):
 
     with logfile.open('a') as f:
         f.write(f"Execution completed in {p.walltime}\n")
+
+    if writedot:
+           with dotfile.open('w+') as f:
+                        for line in as_dot(root):
+                            print(line,file=f)
 
     experiment.duration = p.walltime
 
@@ -674,35 +684,51 @@ class PriorityQueue:
 def autotune(parser, args):
     if parser:
         add_boolean_argument(parser, 'keep')
+        parser.add_argument('--ld-library-path', action='append')
+        parser.add_argument('--outdir')
         parser.add_argument('--timeout', type=float, help="Max exec time in seconds; default is no timout")
         parser.add_argument('ccline', nargs=argparse.REMAINDER)
     if args:
         ccargs = parse_cc_cmdline(args.ccline)
 
+        execargs = argparse.Namespace()
+
+        execargs.ld_library_path = None
+        if args.ld_library_path != None:
+                execargs.ld_library_path = ':'.join(args.ld_library_path)
+
+        execargs.timeout = None 
+        if args.timeout != None:
+                execargs.timeout = datetime.timedelta(seconds=args.timeout)
+
+        outdir = mkpath(args.outdir)
+        maxdepth = 0
+
+
         with contextlib.ExitStack() as stack:
             if args.keep:
-                d = tempfile.mkdtemp(prefix='mctree-')
+                d = tempfile.mkdtemp(dir=outdir,prefix='mctree-')
             else:
-                d = stack.enter_context(tempfile.TemporaryDirectory(prefix='mctree-'))
+                d = stack.enter_context(tempfile.TemporaryDirectory(dir=outdir,prefix='mctree-'))
             d = mkpath(d)
             
             bestfile = d / 'best.txt'
-            dotfile = d / 'graph.dot'
-            csvfile =  d / 'experiments.txt'
+            #dotfile = d / 'graph.dot'
+            csvfile =  d / 'experiments.csv'
             newbestcsvfile = d / 'newbest.csv'
             csvlog = csvfile.open('w+')
             newbestlog = newbestcsvfile.open('w+')
 
-            timeout = args.timeout
-            if timeout != None:
-                timeout = datetime.timedelta(seconds=timeout)
 
-            root = extract_loopnests(d, ccargs)
+
+
+            root = extract_loopnests(d,ccargs= ccargs,execargs= execargs)
             print("Baseline is")
             print(root)
             print("")
 
-            pq = PriorityQueue(root,key=lambda x: 0 if x.duration is None else -x.duration.total_seconds())
+            priorotyfunc = lambda x: -math.inf if x.duration is None else -x.duration.total_seconds()
+            pq = PriorityQueue(root,key=priorotyfunc)
             bestsofar = root
 
             csvlog.write(f"{root.expnumber},{root.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
@@ -713,7 +739,7 @@ def autotune(parser, args):
                 item = pq.top()
 
                 if item.duration == None:
-                    run_experiment(d, ccargs, item, timeout=timeout)
+                    run_experiment(d, item, ccargs=ccargs,execargs=execargs,writedot=maxdepth<=3,root=root)
                     if item.duration == math.inf:
                         # Invalid pragmas? Remove experiment entirely
                         print("Experiment failed")
@@ -745,9 +771,9 @@ def autotune(parser, args):
                     for child in item.derivatives:
                         pq.push(child)
 
-                    with dotfile.open('w+') as f:
-                        for line in as_dot(root):
-                            print(line,file=f)
+                    maxdepth = item.depth+1
+
+
 
                 if item.has_expanded and item.duration != None:
                     pq.pop()
