@@ -178,11 +178,15 @@ def mingwpath_to_ntpath(path):
 
 
 def mkpath(path):
+  if path == None:
+    return None
   if isinstance(path,pathlib.Path):
     return path
   return pathlib.Path(path)
 
 def mkpurepath(path):
+  if path == None:
+    return None
   if isinstance(path,pathlib.PurePath):
     return path
   return pathlib.PurePath(path)

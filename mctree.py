@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import os
 import argparse
 import itertools
 import json
@@ -465,8 +466,10 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
     cmdline += ['-mllvm', '-polly', '-mllvm', '-polly-process-unprofitable', '-mllvm', '-polly-position=early', '-mllvm', '-polly-reschedule=0', '-mllvm', '-polly-pattern-matching-based-opts=0']
     if debuginfo:
         cmdline += ['-g', '-gcolumn-info'] # FIXME: loopnests.json overwritten if multiple files passed to clang
-    cmdline += ['-fopenmp']
-    #cmdline += ['-l', r"C:\Users\meinersbur\build\llvm-project\release\lib\libomp.dll.lib"]
+    if os.name == 'nt':
+        cmdline += ['-l', r"C:\Users\meinersbur\build\llvm-project\release\lib\libomp.dll.lib"]
+    else:
+        cmdline += ['-fopenmp']
     cmdline += ['-mllvm', '-polly-omp-backend=LLVM']
     cmdline += ['-Werror=pass-failed']
     cmdline += extraflags
