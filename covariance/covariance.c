@@ -35,6 +35,7 @@ void print_array(int m,
 		 DATA_TYPE POLYBENCH_2D(cov,M,M,m,m))
 
 {
+  return;
   int i, j;
 
   POLYBENCH_DUMP_START;

@@ -43,6 +43,7 @@ static
 void print_array(int ni, int nj,
 		 DATA_TYPE POLYBENCH_2D(C,NI,NJ,ni,nj))
 {
+  return;
   int i, j;
 
   POLYBENCH_DUMP_START;

@@ -577,6 +577,7 @@ def run_experiment(tempdir:pathlib.Path, experiment: Experiment, ccargs,execargs
         experiment.duration = math.inf
         return
     print(f"Execution completed in {p.walltime}")
+    experiment.duration = p.walltime
 
     with logfile.open('a') as f:
         f.write(f"Execution completed in {p.walltime}\n")
@@ -586,7 +587,6 @@ def run_experiment(tempdir:pathlib.Path, experiment: Experiment, ccargs,execargs
                         for line in as_dot(root):
                             print(line,file=f)
 
-    experiment.duration = p.walltime
 
 
 
@@ -742,7 +742,7 @@ def autotune(parser, args):
                 item = pq.top()
 
                 if item.duration == None:
-                    run_experiment(d, item, ccargs=ccargs,execargs=execargs,writedot=maxdepth<=3,root=root)
+                    run_experiment(d, item, ccargs=ccargs,execargs=execargs,writedot=maxdepth<=4,root=root)
                     if item.duration == math.inf:
                         # Invalid pragmas? Remove experiment entirely
                         print("Experiment failed")
