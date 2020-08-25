@@ -185,7 +185,7 @@ class Experiment:
         self.duration = None
         self.exppath = None
         self.expnumber = None
-        self.depth = None
+        self.depth = 0
 
     def clone(self):
         result = Experiment()
