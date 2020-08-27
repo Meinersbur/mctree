@@ -1,0 +1,2 @@
+(cd /home/meinersbur/scratch/mctree-exec/mctree-p726egyl/experiment324 && /home/meinersbur/scratch/mctree-exec/mctree-p726egyl/experiment324/covariance)
+Exit with code 0 in 0:00:00.671929

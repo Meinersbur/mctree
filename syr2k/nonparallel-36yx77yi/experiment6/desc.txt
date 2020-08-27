@@ -1,0 +1,4 @@
+Experiment 6
+Function kernel_syr2k:
+  #pragma clang loop(loop3,loop4,loop5) tile sizes(1024,16,64) floor_ids(loop306,loop296,loop282) tile_ids(loop307,loop297,loop283)
+Execution completed in 0:00:05.844925

@@ -1,0 +1,2 @@
+(cd /home/meinersbur/scratch/mctree-exec/mctree-36yx77yi/experiment6 && /home/meinersbur/scratch/mctree-exec/mctree-36yx77yi/experiment6/syr2k)
+Exit with code 0 in 0:00:05.844925

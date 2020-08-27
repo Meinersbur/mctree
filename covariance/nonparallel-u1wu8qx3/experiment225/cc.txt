@@ -1,0 +1,57 @@
+(cd /home/meinersbur/scratch/mctree-exec/mctree-u1wu8qx3/experiment225 && /home/meinersbur/install/llvm-project/release/bin/clang /home/meinersbur/scratch/mctree-exec/mctree-u1wu8qx3/experiment225/covariance.c /home/meinersbur/scratch/mctree-exec/mctree-u1wu8qx3/experiment225/polybench.c -Wall -Werror=unknown-pragmas -mllvm -debug-only=polly-ast -O3 -march=native -mllvm -polly-only-func=kernel_covariance -DEXTRALARGE_DATASET -DPOLYBENCH_USE_C99_PROTO -iquote /home/meinersbur/src/mctree -iquote /home/meinersbur/src/mctree/covariance -iquote /home/meinersbur/src/mctree/covariance -mllvm -polly -mllvm -polly-process-unprofitable -mllvm -polly-position=early -mllvm -polly-reschedule=0 -mllvm -polly-pattern-matching-based-opts=0 -fopenmp -mllvm -polly-omp-backend=LLVM -Werror=pass-failed -o /home/meinersbur/scratch/mctree-exec/mctree-u1wu8qx3/experiment225/covariance)
+[stderr] :: isl ast :: kernel_covariance :: %entry.split---%for.end110
+[stderr] [p_0, p_1] -> {  : -2147483648 <= p_0 <= 2147483647 and -2147483648 <= p_1 <= 2147483647 }
+[stderr] { domain: "[p_0, p_1] -> { Stmt12[i0, i1] : 0 <= i0 < p_1 and 0 <= i1 < p_0; Stmt30[i0, i1, i2] : i0 >= 0 and 0 <= i1 < p_0 - i0 and 0 <= i2 < p_1; Stmt6[i0] : 0 <= i0 < p_0; Stmt4[i0, i1] : 0 <= i0 < p_0 and 0 <= i1 < p_1; Stmt20[i0, i1] : i0 >= 0 and 0 <= i1 < p_0 - i0; Stmt2[i0] : 0 <= i0 < p_0; Stmt40[i0, i1] : i0 >= 0 and 0 <= i1 < p_0 - i0 }", child: { sequence: [ { filter: "[p_0, p_1] -> { Stmt4[i0, i1]; Stmt6[i0]; Stmt2[i0] }", child: { mark: "Loop: loop1", child: { schedule: "[p_0, p_1] -> [{ Stmt4[i0, i1] -> [(i0)]; Stmt6[i0] -> [(i0)]; Stmt2[i0] -> [(i0)] }]", child: { sequence: [ { filter: "[p_0, p_1] -> { Stmt2[i0] }" }, { filter: "[p_0, p_1] -> { Stmt4[i0, i1] }", child: { mark: "Loop: loop2", child: { schedule: "[p_0, p_1] -> [{ Stmt4[i0, i1] -> [(i1)] }]" } } }, { filter: "[p_0, p_1] -> { Stmt6[i0] }" } ] } } } }, { filter: "[p_0, p_1] -> { Stmt12[i0, i1] }", child: { mark: "Loop: loop3", child: { schedule: "[p_0, p_1] -> [{ Stmt12[i0, i1] -> [(i0)] }]", child: { mark: "Loop: loop4", child: { schedule: "[p_0, p_1] -> [{ Stmt12[i0, i1] -> [(i1)] }]" } } } } }, { filter: "[p_0, p_1] -> { Stmt20[i0, i1] }", child: { mark: "Loop: loop5", child: { schedule: "[p_0, p_1] -> [{ Stmt20[i0, i1] -> [(i0)] }]", child: { mark: "Loop: loop6", child: { schedule: "[p_0, p_1] -> [{ Stmt20[i0, i1] -> [(i1)] }]" } } } } }, { filter: "[p_0, p_1] -> { Stmt30[i0, i1, i2] }", child: { mark: "Loop: loop372", child: { schedule: "[p_0, p_1] -> [{ Stmt30[i0, i1, i2] -> [(floor((i0)/64))] }]", child: { mark: "Loop: loop366", child: { schedule: "[p_0, p_1] -> [{ Stmt30[i0, i1, i2] -> [(floor((i1)/256))] }]", child: { mark: "Loop: loop328", child: { schedule: "[p_0, p_1] -> [{ Stmt30[i0, i1, i2] -> [(floor((i2)/4))] }]", child: { mark: "Loop: loop373", child: { schedule: "[p_0, p_1] -> [{ Stmt30[i0, i1, i2] -> [((i0) mod 64)] }]", child: { mark: "Loop: loop367", child: { schedule: "[p_0, p_1] -> [{ Stmt30[i0, i1, i2] -> [((i1) mod 256)] }]", child: { mark: "Loop: loop329", child: { schedule: "[p_0, p_1] -> [{ Stmt30[i0, i1, i2] -> [((i2) mod 4)] }]" } } } } } } } } } } } } }, { filter: "[p_0, p_1] -> { Stmt40[i0, i1] }", child: { mark: "Loop: loop10", child: { schedule: "[p_0, p_1] -> [{ Stmt40[i0, i1] -> [(i0)] }]", child: { mark: "Loop: loop11", child: { schedule: "[p_0, p_1] -> [{ Stmt40[i0, i1] -> [(i1)] }]" } } } } } ] } }
+[stderr] if (1 && 0 == p_0 <= -1 && (&MemRef0[p_0] <= &MemRef1[0][0] || &MemRef1[p_1 - 1][p_0] <= &MemRef0[0]) && (&MemRef3[p_0 - 1][p_0] <= &MemRef1[0][0] || &MemRef1[p_1 - 1][p_0] <= &MemRef3[0][0]) && (&MemRef3[p_0 - 1][p_0] <= &MemRef0[0] || &MemRef0[p_0] <= &MemRef3[0][0]))
+[stderr] 
+[stderr]     {
+[stderr]       // Loop: loop1
+[stderr]       for (int c0 = 0; c0 < p_0; c0 += 1) {
+[stderr]         Stmt2(c0);
+[stderr]         // Loop: loop2
+[stderr]         for (int c1 = 0; c1 < p_1; c1 += 1)
+[stderr]           Stmt4(c0, c1);
+[stderr]         Stmt6(c0);
+[stderr]       }
+[stderr]       // Loop: loop3
+[stderr]       for (int c0 = 0; c0 < p_1; c0 += 1) {
+[stderr]         // Loop: loop4
+[stderr]         for (int c1 = 0; c1 < p_0; c1 += 1)
+[stderr]           Stmt12(c0, c1);
+[stderr]       }
+[stderr]       // Loop: loop5
+[stderr]       for (int c0 = 0; c0 < p_0; c0 += 1) {
+[stderr]         // Loop: loop6
+[stderr]         for (int c1 = 0; c1 < p_0 - c0; c1 += 1)
+[stderr]           Stmt20(c0, c1);
+[stderr]       }
+[stderr]       // Loop: loop372
+[stderr]       for (int c0 = 0; c0 <= floord(p_0 - 1, 64); c0 += 1) {
+[stderr]         // Loop: loop366
+[stderr]         for (int c1 = 0; c1 <= (p_0 - 64 * c0 - 1) / 256; c1 += 1) {
+[stderr]           // Loop: loop328
+[stderr]           for (int c2 = 0; c2 <= floord(p_1 - 1, 4); c2 += 1) {
+[stderr]             // Loop: loop373
+[stderr]             for (int c3 = 0; c3 <= min(63, p_0 - 64 * c0 - 256 * c1 - 1); c3 += 1) {
+[stderr]               // Loop: loop367
+[stderr]               for (int c4 = 0; c4 <= min(255, p_0 - 64 * c0 - 256 * c1 - c3 - 1); c4 += 1) {
+[stderr]                 // Loop: loop329
+[stderr]                 for (int c5 = 0; c5 <= min(3, p_1 - 4 * c2 - 1); c5 += 1)
+[stderr]                   Stmt30(64 * c0 + c3, 256 * c1 + c4, 4 * c2 + c5);
+[stderr]               }
+[stderr]             }
+[stderr]           }
+[stderr]         }
+[stderr]       }
+[stderr]       // Loop: loop10
+[stderr]       for (int c0 = 0; c0 < p_0; c0 += 1) {
+[stderr]         // Loop: loop11
+[stderr]         for (int c1 = 0; c1 < p_0 - c0; c1 += 1)
+[stderr]           Stmt40(c0, c1);
+[stderr]       }
+[stderr]     }
+[stderr] 
+[stderr] else
+[stderr]     {  /* original code */ }
+[stderr] 
+Exit with code 0 in 0:00:00.497540

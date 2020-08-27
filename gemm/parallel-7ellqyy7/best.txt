@@ -1,0 +1,8 @@
+Best experiment so far
+Time: 0:00:00.670875
+Path: /home/meinersbur/scratch/mctree-exec/mctree-7ellqyy7/experiment66
+
+Experiment 66
+Exec time 0:00:00.670875
+Function kernel_covariance:
+  #pragma clang loop(loop5) parallelize_thread
