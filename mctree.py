@@ -208,7 +208,7 @@ class Experiment:
     def to_lines(self):
         if self.expnumber != None:
             yield f"Experiment {self.expnumber}"
-        if self.duration != None:
+        if self.duration != None and self.duration != math.inf:
             yield f"Exec time {self.duration}"
 
         isFirst = True
@@ -427,7 +427,6 @@ def example(parser, args):
         return 0
 
 
-
 def read_json(files):
         root = Experiment()
         for fn in files:
@@ -635,8 +634,6 @@ def parse_cc_cmdline(cmdline):
 
 
 
-
-
 class PriorityQueue:    
     class Item:
         def __init__(self,priority:float,item):
@@ -742,7 +739,7 @@ def autotune(parser, args):
                 item = pq.top()
 
                 if item.duration == None:
-                    run_experiment(d, item, ccargs=ccargs,execargs=execargs,writedot=maxdepth<=4,root=root)
+                    run_experiment(d, item, ccargs=ccargs,execargs=execargs,writedot=True,root=root)
                     if item.duration == math.inf:
                         # Invalid pragmas? Remove experiment entirely
                         print("Experiment failed")
@@ -775,8 +772,7 @@ def autotune(parser, args):
                         pq.push(child)
 
                     maxdepth = item.depth+1
-
-
+                    continue
 
                 if item.has_expanded and item.duration != None:
                     pq.pop()

@@ -32,7 +32,7 @@ def makeplot(filename):
 
 
 
-    fig,ax=plt.subplots(figsize= (10,4),tight_layout=True)
+    fig,ax=plt.subplots(figsize=(10,3.7),tight_layout=True)
     ax.set_ylim(ymin=0,ymax=max(idxtime)*1.1)
 
     
