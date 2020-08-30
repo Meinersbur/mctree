@@ -1,0 +1,37 @@
+(cd /home/meinersbur/scratch/mctree-exec/mctree-jm_j9ke3/experiment381 && /home/meinersbur/install/llvm-project/release/bin/clang /home/meinersbur/scratch/mctree-exec/mctree-jm_j9ke3/experiment381/gemm.c /home/meinersbur/scratch/mctree-exec/mctree-jm_j9ke3/experiment381/polybench.c -Wall -Werror=unknown-pragmas -mllvm -debug-only=polly-ast -O3 -march=native -mllvm -polly-only-func=kernel_gemm -DEXTRALARGE_DATASET -DPOLYBENCH_USE_C99_PROTO -iquote /home/meinersbur/src/mctree -iquote /home/meinersbur/src/mctree/gemm -iquote /home/meinersbur/src/mctree/gemm -mllvm -polly -mllvm -polly-process-unprofitable -mllvm -polly-position=early -mllvm -polly-reschedule=0 -mllvm -polly-pattern-matching-based-opts=0 -fopenmp -mllvm -polly-omp-backend=LLVM -Werror=pass-failed -o /home/meinersbur/scratch/mctree-exec/mctree-jm_j9ke3/experiment381/gemm)
+[stderr] :: isl ast :: kernel_gemm :: %entry.split---%for.end46
+[stderr] [p_0, p_1, p_2] -> {  : -2147483648 <= p_0 <= 2147483647 and -2147483648 <= p_1 <= 2147483647 and -2147483648 <= p_2 <= 2147483647 }
+[stderr] { domain: "[p_0, p_1, p_2] -> { Stmt4[i0, i1] : 0 <= i0 < p_0 and 0 <= i1 < p_1; Stmt14[i0, i1, i2] : 0 <= i0 < p_0 and 0 <= i1 < p_2 and 0 <= i2 < p_1 }", child: { sequence: [ { filter: "[p_0, p_1, p_2] -> { Stmt4[i0, i1] }", child: { mark: "Loop: loop1", child: { schedule: "[p_0, p_1, p_2] -> [{ Stmt4[i0, i1] -> [(i0)] }]", child: { mark: "Loop: loop2", child: { schedule: "[p_0, p_1, p_2] -> [{ Stmt4[i0, i1] -> [(i1)] }]" } } } } }, { filter: "[p_0, p_1, p_2] -> { Stmt14[i0, i1, i2] }", child: { mark: "Loop: loop818", child: { schedule: "[p_0, p_1, p_2] -> [{ Stmt14[i0, i1, i2] -> [(floor((i1)/1024))] }]", child: { mark: "Loop: loop808", child: { schedule: "[p_0, p_1, p_2] -> [{ Stmt14[i0, i1, i2] -> [(floor((i2)/64))] }]", child: { mark: "Loop: loop782", child: { schedule: "[p_0, p_1, p_2] -> [{ Stmt14[i0, i1, i2] -> [(floor((i0)/16))] }]", child: { mark: "Loop: loop819", child: { schedule: "[p_0, p_1, p_2] -> [{ Stmt14[i0, i1, i2] -> [((i1) mod 1024)] }]", child: { mark: "Loop: loop809", child: { schedule: "[p_0, p_1, p_2] -> [{ Stmt14[i0, i1, i2] -> [((i2) mod 64)] }]", child: { mark: "Loop: loop783", child: { schedule: "[p_0, p_1, p_2] -> [{ Stmt14[i0, i1, i2] -> [((i0) mod 16)] }]" } } } } } } } } } } } } } ] } }
+[stderr] if (1 && 0 == (p_1 <= -1 || p_2 <= -1) && (&MemRef2[p_0 - 1][p_2] <= &MemRef0[0][0] || &MemRef0[p_0 - 1][p_1] <= &MemRef2[0][0]) && (&MemRef4[p_2 - 1][p_1] <= &MemRef0[0][0] || &MemRef0[p_0 - 1][p_1] <= &MemRef4[0][0]))
+[stderr] 
+[stderr]     {
+[stderr]       // Loop: loop1
+[stderr]       for (int c0 = 0; c0 < p_0; c0 += 1) {
+[stderr]         // Loop: loop2
+[stderr]         for (int c1 = 0; c1 < p_1; c1 += 1)
+[stderr]           Stmt4(c0, c1);
+[stderr]       }
+[stderr]       // Loop: loop818
+[stderr]       for (int c0 = 0; c0 <= floord(p_2 - 1, 1024); c0 += 1) {
+[stderr]         // Loop: loop808
+[stderr]         for (int c1 = 0; c1 <= floord(p_1 - 1, 64); c1 += 1) {
+[stderr]           // Loop: loop782
+[stderr]           for (int c2 = 0; c2 <= floord(p_0 - 1, 16); c2 += 1) {
+[stderr]             // Loop: loop819
+[stderr]             for (int c3 = 0; c3 <= min(1023, p_2 - 1024 * c0 - 1); c3 += 1) {
+[stderr]               // Loop: loop809
+[stderr]               for (int c4 = 0; c4 <= min(63, p_1 - 64 * c1 - 1); c4 += 1) {
+[stderr]                 // Loop: loop783
+[stderr]                 for (int c5 = 0; c5 <= min(15, p_0 - 16 * c2 - 1); c5 += 1)
+[stderr]                   Stmt14(16 * c2 + c5, 1024 * c0 + c3, 64 * c1 + c4);
+[stderr]               }
+[stderr]             }
+[stderr]           }
+[stderr]         }
+[stderr]       }
+[stderr]     }
+[stderr] 
+[stderr] else
+[stderr]     {  /* original code */ }
+[stderr] 
+Exit with code 0 in 0:00:00.350981
