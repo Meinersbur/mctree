@@ -80,10 +80,7 @@ void kernel_gemm(int ni, int nj, int nk,
 //B is NKxNJ
 //C is NIxNJ
 
-  int m = ni;
-  int n = nj;
-  int k = nk;
-  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, m, n, k, alpha, A, k, B, n, beta, C, n);
+  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, /*m*/ni, /*n*/nj, /*k*/nk, alpha, A, /*k*/nk, B, /*n*/nj, beta, C, /*n*/nj);
 }
 
 
