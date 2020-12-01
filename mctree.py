@@ -280,14 +280,18 @@ class Experiment:
         for idx in range(self.get_num_children()):
             yield self.get_child(idx)
 
-    def derivatives_recursive(self, max_depth=None):
+    def derivatives_recursive(self, max_depth=None, filter=None, descendfilter=None):
+        if filter and not filter(self):
+            return
         yield self
 
         if max_depth != None and max_depth == 0:
             return
+        if descendfilter and not descendfilter(self):
+            return
 
         for n in self.children():
-            yield from n.derivatives_recursive(max_depth=max_depth-1 if max_depth != None else None)
+            yield from n.derivatives_recursive(max_depth=max_depth-1 if max_depth != None else None,filter=filter,descendfilter=descendfilter)
 
     def __str__(self):
         return '\n'.join(self.to_lines())
@@ -476,11 +480,12 @@ class Reverse:
         return reversed_loop, [pragma]
 
 
-def as_dot(baseexperiment: Experiment, max_depth=None):
+def as_dot(baseexperiment: Experiment, max_depth=None, filter=None, decendfilter=None):
     yield 'digraph G {'
     yield '  rankdir=LR;'
     yield ''
-    for experiment in baseexperiment.derivatives_recursive(max_depth=max_depth):
+
+    for experiment in baseexperiment.derivatives_recursive(max_depth=max_depth, filter=filter, descendfilter=decendfilter):
         desc = ''.join(l + '\\l' for l in experiment.to_lines())
 
         if experiment.duration == math.inf:
@@ -569,8 +574,7 @@ def jsonfile(parser, args):
         parser.add_argument('filename', nargs='+')
     if args:
         root = read_json(files=args.filenames)
-        expand_searchtree(root, remaining_depth=args.maxdepth)
-        for line in as_dot(root):
+        for line in as_dot(root, max_depth=args.maxdepth):
             print(line)
         return 0
 
@@ -626,7 +630,7 @@ def extract_loopnests(tempdir, ccargs, execargs):
 
 
 expnumber = 1
-def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execargs, writedot: bool, root: Experiment):
+def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execargs, writedot: bool, dotfilter, dotexpandfilter, root: Experiment):
     global expnumber
     expdir = tempdir / f"experiment{expnumber}"
     experiment.expnumber = expnumber
@@ -710,7 +714,7 @@ def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execar
 
     if writedot:
         with dotfile.open('w+') as f:
-            for line in as_dot(root):
+            for line in as_dot(root, filter=dotfilter, decendfilter=dotexpandfilter):
                 print(line, file=f)
 
 
@@ -833,6 +837,7 @@ def autotune(parser, args):
 
         outdir = mkpath(args.outdir)
         maxdepth = 0
+        num_experiments = 0
 
         with contextlib.ExitStack() as stack:
             if args.keep:
@@ -855,6 +860,7 @@ def autotune(parser, args):
             def priorotyfunc(x): 
                 return -math.inf if x.duration is None else -x.duration.total_seconds()
             pq = PriorityQueue(root, key=priorotyfunc)
+            closed = set()
             bestsofar = root
 
             csvlog.write(f"{root.expnumber},{root.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
@@ -864,7 +870,12 @@ def autotune(parser, args):
                 item = pq.top()
 
                 if item.duration == None:
-                    run_experiment(d, item, ccargs=ccargs, execargs=execargs, writedot=True, root=root)
+                    num_experiments += 1
+                    run_experiment(d, item, ccargs=ccargs, execargs=execargs, 
+                        writedot=num_experiments < 30, 
+                        dotfilter=None,
+                        dotexpandfilter=lambda n: n in closed,
+                        root=root)
                     if item.duration == math.inf:
                         # Invalid pragmas? Remove experiment entirely
                         print("Experiment failed")
@@ -891,13 +902,14 @@ def autotune(parser, args):
                     csvlog.flush()
                     continue
 
-                if not item.has_expanded:
+
+                if not item in closed:
                     print(f"Selecting best experiment {item.duration} for expansion")
-                    expand_searchtree(item, remaining_depth=1)
-                    for child in item.derivatives:
+                    for child in item.children():
                         pq.push(child)
 
                     maxdepth = item.depth+1
+                    closed.add(item)
                     continue
 
                 if item.has_expanded and item.duration != None:
