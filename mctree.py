@@ -79,6 +79,7 @@ class Loop:
 
         self.name = name
         self.subloops = []
+        self.isperfectnest = None
         self.filename = None
         self.line = None
         self.column = None
@@ -114,10 +115,13 @@ class Loop:
         result = [self]
         while True:
             lastsubloops = result[-1].subloops
+            if result[-1].isperfectnest == False:
+                break
             if len(lastsubloops) != 1:
                 break
             if not lastsubloops[0].transformable:
                 break
+
             result.append(lastsubloops[0])
         return result
 
@@ -208,6 +212,7 @@ def json_to_loops(topmost):
         loop.entry = tm["entry"]
         loop.exit = tm["exit"]
         loop.function = tm["function"]
+        loop.isperfectnest = tm.get('perfectnest')
         sublooproot = json_to_loops(tm["subloops"])
         loop.subloops = sublooproot.subloops
         result.add_subloop(loop)
@@ -460,11 +465,11 @@ class Interchange:
         return mcall(self.selector(), idx)
 
 
-class Reverse:
+class Reversal:
     @staticmethod
     def get_factory():
         def factory(loop: Loop):
-            return Reverse(loop)
+            return Reversal(loop)
         return factory
 
     def __init__(self, loop):
@@ -912,7 +917,7 @@ def autotune(parser, args):
                     closed.add(item)
                     continue
 
-                if item.has_expanded and item.duration != None:
+                if item in closed and item.duration != None:
                     pq.pop()
 
             print("No more experiments!!?")
@@ -927,7 +932,7 @@ def main(argv: str) -> int:
     parser.add_argument('--tiling-sizes')
     add_boolean_argument(parser, "--threading", default=True)
     add_boolean_argument(parser, "--interchange", default=True)
-    add_boolean_argument(parser, "--reverse", default=True)
+    add_boolean_argument(parser, "--reversal", default=True)
 
     subparsers = parser.add_subparsers(dest='subcommand')
     for cmd, func in commands.items():
@@ -944,8 +949,8 @@ def main(argv: str) -> int:
         transformers.append(Threading.get_factory())
     if args.interchange:
         transformers.append(Interchange.get_factory())
-    if args.reverse:
-        transformers.append(Reverse.get_factory())
+    if args.reversal:
+        transformers.append(Reversal.get_factory())
 
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:
