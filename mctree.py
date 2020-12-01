@@ -456,6 +456,26 @@ class Interchange:
         return mcall(self.selector(), idx)
 
 
+class Reverse:
+    @staticmethod
+    def get_factory():
+        def factory(loop: Loop):
+            return Reverse(loop)
+        return factory
+
+    def __init__(self, loop):
+        self.loop = loop
+
+    def get_num_children(self):
+        return 1
+
+    def get_child(self, idx: int):
+        reversed_loop = Loop.createLoop()
+        reversed_loop.subloops = self.loop.subloops
+        pragma = f'#pragma clang loop({self.loop.name}) reverse reversed_id({reversed_loop.name})'
+        return reversed_loop, [pragma]
+
+
 def as_dot(baseexperiment: Experiment, max_depth=None):
     yield 'digraph G {'
     yield '  rankdir=LR;'
@@ -910,6 +930,7 @@ def main(argv: str) -> int:
     parser.add_argument('--tiling-sizes')
     add_boolean_argument(parser, "--threading", default=True)
     add_boolean_argument(parser, "--interchange", default=True)
+    add_boolean_argument(parser, "--reverse", default=True)
 
     subparsers = parser.add_subparsers(dest='subcommand')
     for cmd, func in commands.items():
@@ -926,6 +947,8 @@ def main(argv: str) -> int:
         transformers.append(Threading.get_factory())
     if args.interchange:
         transformers.append(Interchange.get_factory())
+    if args.reverse:
+        transformers.append(Reverse.get_factory())
 
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:
