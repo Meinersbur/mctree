@@ -18,6 +18,35 @@ import tool.invoke as invoke
 from tool.support import *
 
 
+def mcount(seq):
+    result = 0
+    for count,_ in seq:
+        result += count
+    return result
+
+def mselect(seq, idx: int):
+    pos = idx
+    for count,elt in seq:
+        assert count>=0
+        if pos < count:
+            return pos,elt
+        pos -= count
+    assert False,"Larger index than total elements"
+
+def mcall(seq, idx: int):
+    pos,elt = mselect(seq, idx)
+    return elt(pos)
+
+def neighbors(seq):
+    it = iter(seq)
+    prev = next(it)
+    for item in it:
+        yield prev, item
+        prev = item
+
+
+transformers = []
+
 class Loop:
     numloopssofar = 0
 
@@ -26,17 +55,24 @@ class Loop:
         if not name:
             Loop.numloopssofar += 1
             name = f'loop{Loop.numloopssofar}'
-        return cls(isroot=False, name=name)
+        return cls(isroot=False, istransformable=True, name=name)
+
+    @classmethod
+    def createAnonLoop(cls):
+        return cls(isroot=False, istransformable=False, name=None)
 
     @classmethod
     def createRoot(cls):
-        return cls(isroot=True, name=None)
+        return cls(isroot=True, istransformable=False, name=None)
 
-    def __init__(self, isroot: bool, name: str):
+    def __init__(self, isroot: bool, istransformable: bool, name: str):
+        if isroot or not istransformable:
+             assert name == None
+
         self.isroot = isroot
-        self.transformable = True
-        if not isroot:
-            self.name = name
+        self.transformable = istransformable
+
+        self.name = name
         self.subloops = []
         self.filename = None
         self.line = None
@@ -44,16 +80,41 @@ class Loop:
         self.function = None
         self.entry = None
         self.exit = None
-      
+
+
+    def selector(self):
+        if not self.isroot and self.transformable:
+            looptransformers = (t(self) for t in transformers)
+            for transformer in looptransformers:
+                yield transformer.get_num_children(), transformer.get_child
+        for i,subloop in enumerate(self.subloops):
+            subloop = self.subloops[i]
+            def replace_loop(idx: int):
+                newsubloop, pragmas = subloop.get_child(idx)
+                newloop = self.clone()
+                newloop.subloops[i] = newsubloop
+                return newloop, pragmas
+            yield subloop.get_num_children(), replace_loop
+
+    def get_num_children(self):
+        return mcount(self.selector())
+
+    def get_child(self, idx: int):
+        return mcall(self.selector(), idx)
+
 
     def perfectnest(self):
+        assert self.transformable
+        assert not self.isroot
+
         result = [self]
         while True:
-            if len(result[-1].subloops) != 1:
+            lastsubloops = result[-1].subloops
+            if len(lastsubloops) != 1:
                 break
-            if not result[-1].subloops[0].transformable:
+            if not lastsubloops[0].transformable:
                 break
-            result.append(result[-1].subloops[0])
+            result.append(lastsubloops[0])
         return result
 
     def subloops_recursive(self):
@@ -72,9 +133,9 @@ class Loop:
 
     def clone(self):
         if self.isroot:
-            result = Loop(isroot=True, name=None)
+            result = Loop(isroot=True, istransformable=False, name=None)
         else:
-            result = Loop(isroot=False, name=self.name)
+            result = Loop(isroot=False, istransformable=self.transformable, name=self.name)
         result.subloops = self.subloops.copy()
         result.filename = self.filename
         result.line = self.line
@@ -149,17 +210,6 @@ def json_to_loops(topmost):
     return result
 
 
-def transform_node(root, callback):
-    def do_transform_node(loop, childids, callback):
-        if not loop.isroot:
-            for newsubtree in callback(loop):
-                newroot = gist(root, childids, loop, newsubtree[0])
-                yield tuple(list(newsubtree) + [newroot])
-        for i, child in enumerate(loop.subloops):
-            yield from do_transform_node(child, childids + [i], callback)
-    yield from do_transform_node(root, [], callback)
-
-
 class LoopNestExperiment:
     def __init__(self, loopnest, pragmalist):
         self.loopnest = loopnest
@@ -176,12 +226,21 @@ class LoopNestExperiment:
             return self.loopnest.to_lines(0)
 
 
+    def get_num_children(self):
+        return self.loopnest.get_num_children()
+
+    def get_child(self, idx: int):
+        loopnest,pragmalist = self.loopnest.get_child(idx)
+        result = LoopNestExperiment(loopnest, self.pragmalist + pragmalist)
+        result.derived_from = self
+        return result
+
+
 class Experiment:
     def __init__(self):
         self.nestexperiments = []
         self.derived_from = None
-        self.derivatives = []
-        self.has_expanded = False
+        self.derivatives = dict()
         self.duration = None
         self.exppath = None
         self.expnumber = None
@@ -192,15 +251,42 @@ class Experiment:
         result.nestexperiments = self.nestexperiments.copy()
         return result
 
-    def add_subexperiment(self, subexp):
-        subexp.derived_from = self
-        subexp.depth = self.depth+1
-        self.derivatives.append(subexp)
 
-    def derivatives_recursive(self):
+    def selector(self):
+        for i,nestexperiment in enumerate(self.nestexperiments):
+            def make_child(idx: int):
+                if result := self.derivatives.get(idx):
+                    return result
+
+                newnestexp = nestexperiment.get_child(idx)
+                result = Experiment()
+                result.derived_from = self
+                result.nestexperiments = self.nestexperiments.copy()
+                result.nestexperiments[i] = newnestexp
+
+                self.derivatives[idx] = result
+                return result
+            yield nestexperiment.get_num_children(), make_child
+
+    def get_num_children(self):
+        return mcount(self.selector())
+
+    def get_child(self, idx: int):
+        return mcall(self.selector(), idx)
+        
+    def children(self):
+        for idx in range(self.get_num_children()):
+            yield self.get_child(idx)
+
+
+    def derivatives_recursive(self, max_depth=None):
         yield self
-        for n in self.derivatives:
-            yield from n.derivatives_recursive()
+
+        if max_depth!=None and max_depth==0:
+            return
+
+        for n in self.children():
+            yield from n.derivatives_recursive(max_depth=max_depth-1 if max_depth!=None else None)
 
     def __str__(self):
         return '\n'.join(self.to_lines())
@@ -228,149 +314,172 @@ class Experiment:
 
 
 class Tiling:
-    tilesizes = [2, 4]
+    @staticmethod 
+    def get_factory(tilesizes):
+        def factory(loop):
+            return Tiling(loop,tilesizes)
+        return factory
+    
+    def __init__(self,loop,tilesizes):
+        self.loop = loop 
+        self.tilesizes = tilesizes
+        self.num_children = mcount(self.selector())
 
-    @staticmethod
-    def do_subtile(loop):
-        # End tiling here
-        yield [], [], [], loop.subloops, []
 
-        if len(loop.subloops) == 1 and loop.subloops[0].transformable:
-            yield from Tiling.do_tile(loop.subloops[0])
+    def selector(self):
+        loopnest = self.loop.perfectnest()
+        n = len(loopnest)
+        tilesizes = self.tilesizes
 
-    @staticmethod
-    def do_tile(loop):
-        for origloops, subfloors, subtiles, subbody, subsizes in Tiling.do_subtile(loop):
-            for tilesize in Tiling.tilesizes:
-                yield [loop] + origloops, [Loop.createLoop()] + subfloors, [Loop.createLoop()] + subtiles, subbody, [tilesize] + subsizes
+        for d in range(1,n+1):
+            def make_child(idx: int):
+                origloops = loopnest[:d]
+                keeploops = loopnest[d:]
+                floors = list([Loop.createLoop() for i in range(0,d)])
+                tiles = list([Loop.createLoop() for i in range(0,d)])
+                newloops = floors + tiles
+                for outer,inner in neighbors(newloops):
+                    outer.subloops = [inner]
+                newloops[-1].subloops = origloops[-1].subloops
 
-    @staticmethod
-    def gen_tiling(loop: Loop):
-        for origloops, floors, tiles, body, sizes in Tiling.do_tile(loop):
-            cur = floors[0]
-            for floor in floors[1:]:
-                cur.subloops = [floor]
-                cur = floor
-            for tile in tiles:
-                cur.subloops = [tile]
-                cur = tile
-            cur.subloops = body
+                sizes = []
+                leftover = idx
+                for i in range(n):
+                    sizes.append(tilesizes[leftover % len(tilesizes)])
+                    leftover //= len(tilesizes)
+                assert leftover == 0
+                origloopids = [l.name for l in origloops] 
+                floorids = [floor.name for floor in floors]
+                tileids = [tile.name for tile in tiles]
+                sizes = [str(s) for s in sizes]
+                pragma = f"#pragma clang loop({','.join(origloopids)}) tile sizes({','.join(sizes)}) floor_ids({','.join(floorids)}) tile_ids({','.join(tileids)})"
+                return newloops[0],  [pragma]
 
-            origloopids = [l.name for l in origloops] 
-            floorids = [floor.name for floor in floors]
-            tileids = [tile.name for tile in tiles]
-            sizes = [str(s) for s in sizes]
-            pragma = f"#pragma clang loop({','.join(origloopids)}) tile sizes({','.join(sizes)}) floor_ids({','.join(floorids)}) tile_ids({','.join(tileids)})"
-            yield floors[0], [pragma]
+            yield len(tilesizes)**d, make_child
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, idx: int):
+        return mcall(self.selector(), idx)
 
 
 class Threading:
-    @staticmethod
-    def gen_threading(loop: Loop):
-        parallel_loop = Loop.createLoop()
-        parallel_loop.transformable = False
-        parallel_loop.subloops = loop.subloops
-        #pragma = f"#pragma clang loop({loop.name}) parallelize_thread parallel_id({parallel_loop.name})"
-        #yield parallel_loop, [pragma]
-        pragma = f"#pragma clang loop({loop.name}) parallelize_thread"
-        yield parallel_loop, [pragma]
+    @staticmethod 
+    def get_factory():
+        def factory(loop: Loop):
+            return Threading(loop)
+        return factory
+
+    def __init__(self,loop):
+        self.loop = loop 
+
+    def get_num_children(self):
+        return 1
+
+    def get_child(self,idx: int):
+        parallel_loop = Loop.createAnonLoop(); 
+        parallel_loop.subloops = self.loop.subloops
+        pragma = f"#pragma clang loop({self.loop.name}) parallelize_thread"
+        return parallel_loop, [pragma]
 
 
 class Interchange:
-    @staticmethod
-    def gen_interchange(loop: Loop):
-        orignest = loop.perfectnest()
-        for perm in itertools.permutations(orignest):
-            if perm[0] == loop:
-                continue
+    @staticmethod 
+    def get_factory():
+        def factory(loop: Loop):
+            return Interchange(loop)
+        return factory
 
-            nests = orignest
-            while perm[-1] == nests[-1]:
-                perm = perm[:-1]
-                nests = nests[:-1]
-
-            newperm = [Loop.createLoop() for l in perm]
-            for p, c in zip(newperm, newperm[1:]):
-                p.subloops = [c]
-            newperm[-1].subloops = nests[-1].subloops
-
-            nestids = [p.name for p in nests]
-            permids = [p.name for p in perm]
-            newpermids = [p.name for p in newperm]
-            pragma = f"#pragma clang loop({','.join(nestids)}) interchange permutation({','.join(permids)}) permuted_ids({','.join(newpermids)})"
-            yield newperm[0], [pragma]
-
-
-tiling_enabled = True
-threading_enabled = True
-interchange_enabled = True
-
-
-def do_transformations(loop):
-    if not loop.transformable:
-        return
-
-    if tiling_enabled:
-        yield from Tiling.gen_tiling(loop)
-
-    if threading_enabled:
-        yield from Threading.gen_threading(loop)
-
-    if interchange_enabled:
-        yield from Interchange.gen_interchange(loop)
-
-
-def derive_loopnest_expriments(searchspacenode: Experiment, i: int):
-    baseexperiment = searchspacenode.nestexperiments[i]
-
-    oldroot = baseexperiment.loopnest  # type: Loop
-    for newsubloop, pragma, newroot in transform_node(oldroot, do_transformations):
-        x = LoopNestExperiment(newroot, baseexperiment.pragmalist + pragma)
-        x.derived_from = baseexperiment
-
-        y = searchspacenode.clone()
-        y.nestexperiments[i] = x
-        searchspacenode.add_subexperiment(y)
-
-
-def derive_expriments(searchspacenode: Experiment):
-    for i in range(len(searchspacenode.nestexperiments)):
-        derive_loopnest_expriments(searchspacenode, i)
-
-
-def expand_searchtree(baseexperiment: Experiment, remaining_depth: int):
-    if remaining_depth <= 0:
-        return
-
-    if not baseexperiment.has_expanded:
-        derive_expriments(baseexperiment)
-        baseexperiment.has_expanded = True
-    for e in baseexperiment.derivatives:
-        expand_searchtree(e, remaining_depth=remaining_depth-1)
+    def __init__(self, loop:Loop):
+        self.loop = loop 
+        self.num_children = mcount(self.selector())
 
 
 
-def as_dot(baseexperiment: LoopNestExperiment):
-    yield "digraph G {"
-    yield "rankdir=LR;"
+    def selector(self):
+        loopnest = self.loop.perfectnest()
+        n = len(loopnest)
 
-    for experiment in baseexperiment.derivatives_recursive():
-        desc = ''.join(l + "\\l" for l in experiment.to_lines())
+        # If there is nothing to permute
+        if n <= 1:
+            return 
+
+        num_children = (n-1)
+        for i in range(1,n-1):
+            num_children *= i
+
+        for d in range(1,n+1):
+            def make_child(idx: int):
+                orignest = loopnest.copy()
+                remaining = loopnest.copy()
+                perm = []
+
+                i = idx
+
+                # New topmost loop cannot be the old topmost
+                # Otherwise it should be an interchange of the nested loop; this also excludes the identity permutation
+                select = i % (len(remaining) - 1) + 1
+                i //= (len(remaining) - 1) 
+                perm.append(remaining[select])
+                del remaining[select]
+
+                while remaining:
+                    select = i % len(remaining)
+                    i //= len(remaining) 
+                    perm.append(remaining[select])
+                    del remaining[select]
+                
+                assert i == 0
+                assert len(perm) == n
+                assert len(remaining) == 0
+
+                # Strip trailing unchanged loops
+                while perm[-1] == orignest[-1]:
+                    del perm[-1]
+                    del orignest[-1]
+
+                newperm = [Loop.createLoop() for l in perm]
+                for p, c in neighbors(newperm):
+                    p.subloops = [c]
+                newperm[-1].subloops = orignest[-1].subloops
+
+                nestids = [p.name for p in orignest]
+                permids = [p.name for p in perm]
+                newpermids = [p.name for p in newperm]
+                pragma = f"#pragma clang loop({','.join(nestids)}) interchange permutation({','.join(permids)}) permuted_ids({','.join(newpermids)})"
+                return newperm[0], [pragma]
+            yield num_children, make_child
+
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self,idx: int):
+        return mcall(self.selector(), idx)
+
+
+def as_dot(baseexperiment: Experiment, max_depth=None):
+    yield 'digraph G {'
+    yield '  rankdir=LR;'
+    yield ''
+    for experiment in baseexperiment.derivatives_recursive(max_depth=max_depth):
+        desc = ''.join(l + '\\l' for l in experiment.to_lines())
 
         if experiment.duration == math.inf:
-            fillcolor = "lightpink:crimson"
+            fillcolor = 'lightpink:crimson'
         elif experiment.duration != None:
-            fillcolor = "darkseagreen1:lawngreen"
+            fillcolor = 'darkseagreen1:lawngreen'
         else:
-            fillcolor = "azure:powderblue"
+            fillcolor = 'azure:powderblue'
 
-        yield f'n{id(experiment)}[shape=box color="grey30" penwidth=2 fillcolor="{fillcolor}" style="filled,rounded" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
+        yield f'  n{id(experiment)}[shape=box color="grey30" penwidth=2 fillcolor="{fillcolor}" style="filled,rounded" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
 
         if parent := experiment.derived_from:
-            yield f"n{id(parent)} -> n{id(experiment)};"
-        yield ""
+            yield f'  n{id(parent)} -> n{id(experiment)};'
+        yield ''
 
-    yield "}"
+    yield '}'
 
 
 # Decorator
@@ -407,8 +516,6 @@ def add_boolean_argument(parser, name, default=False, dest=None, help=None):
     parser.set_defaults(**defaults)
 
 
-
-
 @subcommand("example")
 def example(parser, args):
     if parser:
@@ -420,9 +527,9 @@ def example(parser, args):
 
         root = Experiment()
         root.nestexperiments.append(LoopNestExperiment(example, []))
-        expand_searchtree(root, remaining_depth=args.maxdepth)
+        #expand_searchtree(root, remaining_depth=args.maxdepth)
 
-        for line in as_dot(root):
+        for line in as_dot(root, max_depth=args.maxdepth):
             print(line)
         return 0
 
@@ -713,7 +820,6 @@ def autotune(parser, args):
             d = mkpath(d)
             
             bestfile = d / 'best.txt'
-            #dotfile = d / 'graph.dot'
             csvfile =  d / 'experiments.csv'
             newbestcsvfile = d / 'newbest.csv'
             csvlog = csvfile.open('w+')
@@ -780,11 +886,8 @@ def autotune(parser, args):
             print("No more experiments!!?")
 
 
-
-
-
 def main(argv: str) -> int:
-    global tiling_enabled, threading_enabled, interchange_enabled
+    global transformers
     parser = argparse.ArgumentParser(
         description="Loop transformation search tree proof-of-concept", allow_abbrev=False)
 
@@ -800,11 +903,15 @@ def main(argv: str) -> int:
         func(parser=subparser, args=None)
     args = parser.parse_args(str(v) for v in argv[1:])
 
-    tiling_enabled = args.tiling
-    if  args.tiling_sizes!=None:
-        Tiling.tilesizes = [int(s) for s in args.tiling_sizes.split(',')]
-    threading_enabled = args.threading
-    interchange_enabled = args.interchange
+    if args.tiling:
+        tilesizes = [2,4]
+        if  args.tiling_sizes!=None:
+            tilesizes = [int(s) for s in args.tiling_sizes.split(',')]
+        transformers.append(Tiling.get_factory(tilesizes))
+    if args.threading:
+        transformers.append(Threading.get_factory())
+    if args.interchange:
+        transformers.append(Interchange.get_factory())
 
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:
