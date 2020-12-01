@@ -501,8 +501,6 @@ def as_dot(baseexperiment: Experiment, max_depth=None):
 
 # Decorator
 commands = {}
-
-
 def subcommand(name):
     def command_func(_func):
         global commands
@@ -628,8 +626,6 @@ def extract_loopnests(tempdir, ccargs, execargs):
 
 
 expnumber = 1
-
-
 def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execargs, writedot: bool, root: Experiment):
     global expnumber
     expdir = tempdir / f"experiment{expnumber}"
@@ -664,7 +660,7 @@ def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execar
                 continue
             filename = mkpath(loop.filename).resolve()
             line = loop.line-1     # is one-based
-            column = loop.column-1  # is one-based
+            column = loop.column-1 # is one-based
             name = loop.name
 
             if (first == None) or (first > (line, column)):
@@ -675,14 +671,11 @@ def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execar
 
             oldline = contentlines[line]
             # FIXME: if multiple loops per line, ensure that later are replaced first
-            newline = oldline[:column] + \
-                f"\n#pragma clang loop id({name})\n" + oldline[column:]
+            newline = oldline[:column] + f"\n#pragma clang loop id({name})\n" + oldline[column:]
             contentlines[line] = newline
 
         oldline = contentlines[first[0]]
-        newline = oldline[:first[1]] + '\n' + \
-            ''.join(s + '\n' for s in reversed(x.pragmalist)) + \
-            oldline[first[1]:]
+        newline = oldline[:first[1]] + '\n' + ''.join(s + '\n' for s in reversed(x.pragmalist)) + oldline[first[1]:]
         contentlines[first[0]] = newline
 
     # Writeback files in new dir
@@ -845,8 +838,7 @@ def autotune(parser, args):
             if args.keep:
                 d = tempfile.mkdtemp(dir=outdir, prefix='mctree-')
             else:
-                d = stack.enter_context(
-                    tempfile.TemporaryDirectory(dir=outdir, prefix='mctree-'))
+                d = stack.enter_context(tempfile.TemporaryDirectory(dir=outdir, prefix='mctree-'))
             d = mkpath(d)
 
             bestfile = d / 'best.txt'
@@ -860,22 +852,19 @@ def autotune(parser, args):
             print(root)
             print("")
 
-            def priorotyfunc(
-                x): return -math.inf if x.duration is None else -x.duration.total_seconds()
+            def priorotyfunc(x): 
+                return -math.inf if x.duration is None else -x.duration.total_seconds()
             pq = PriorityQueue(root, key=priorotyfunc)
             bestsofar = root
 
-            csvlog.write(
-                f"{root.expnumber},{root.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
-            newbestlog.write(
-                f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+            csvlog.write(f"{root.expnumber},{root.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+            newbestlog.write(f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
 
             while not pq.empty():
                 item = pq.top()
 
                 if item.duration == None:
-                    run_experiment(d, item, ccargs=ccargs,
-                                   execargs=execargs, writedot=True, root=root)
+                    run_experiment(d, item, ccargs=ccargs, execargs=execargs, writedot=True, root=root)
                     if item.duration == math.inf:
                         # Invalid pragmas? Remove experiment entirely
                         print("Experiment failed")
@@ -896,17 +885,14 @@ def autotune(parser, args):
                             for line in bestsofar.to_lines():
                                 f.write(line)
                                 f.write('\n')
-                        newbestlog.write(
-                            f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+                        newbestlog.write(f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
                         newbestlog.flush()
-                    csvlog.write(
-                        f"{item.expnumber},{item.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+                    csvlog.write(f"{item.expnumber},{item.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
                     csvlog.flush()
                     continue
 
                 if not item.has_expanded:
-                    print(
-                        f"Selecting best experiment {item.duration} for expansion")
+                    print(f"Selecting best experiment {item.duration} for expansion")
                     expand_searchtree(item, remaining_depth=1)
                     for child in item.derivatives:
                         pq.push(child)
@@ -922,8 +908,7 @@ def autotune(parser, args):
 
 def main(argv: str) -> int:
     global transformers
-    parser = argparse.ArgumentParser(
-        description="Loop transformation search tree proof-of-concept", allow_abbrev=False)
+    parser = argparse.ArgumentParser(description="Loop transformation search tree proof-of-concept", allow_abbrev=False)
 
     parser.add_argument('--maxdepth', type=int, default=2)
     add_boolean_argument(parser, "--tiling", default=True)
