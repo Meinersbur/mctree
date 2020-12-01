@@ -1,41 +1,45 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import sys
-import os
 import argparse
+import contextlib
+import csv
+import datetime
+import heapq
 import itertools
 import json
-import pathlib
-import tempfile
-import heapq
-import contextlib
-import subprocess
 import math
-import datetime
-import csv
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+
 import tool.invoke as invoke
 from tool.support import *
 
 
 def mcount(seq):
     result = 0
-    for count,_ in seq:
+    for count, _ in seq:
         result += count
     return result
 
+
 def mselect(seq, idx: int):
     pos = idx
-    for count,elt in seq:
-        assert count>=0
+    for count, elt in seq:
+        assert count >= 0
         if pos < count:
-            return pos,elt
+            return pos, elt
         pos -= count
-    assert False,"Larger index than total elements"
+    assert False, "Larger index than total elements"
+
 
 def mcall(seq, idx: int):
-    pos,elt = mselect(seq, idx)
+    pos, elt = mselect(seq, idx)
     return elt(pos)
+
 
 def neighbors(seq):
     it = iter(seq)
@@ -46,6 +50,7 @@ def neighbors(seq):
 
 
 transformers = []
+
 
 class Loop:
     numloopssofar = 0
@@ -67,7 +72,7 @@ class Loop:
 
     def __init__(self, isroot: bool, istransformable: bool, name: str):
         if isroot or not istransformable:
-             assert name == None
+            assert name == None
 
         self.isroot = isroot
         self.transformable = istransformable
@@ -81,14 +86,14 @@ class Loop:
         self.entry = None
         self.exit = None
 
-
     def selector(self):
         if not self.isroot and self.transformable:
             looptransformers = (t(self) for t in transformers)
             for transformer in looptransformers:
                 yield transformer.get_num_children(), transformer.get_child
-        for i,subloop in enumerate(self.subloops):
+        for i, subloop in enumerate(self.subloops):
             subloop = self.subloops[i]
+
             def replace_loop(idx: int):
                 newsubloop, pragmas = subloop.get_child(idx)
                 newloop = self.clone()
@@ -101,7 +106,6 @@ class Loop:
 
     def get_child(self, idx: int):
         return mcall(self.selector(), idx)
-
 
     def perfectnest(self):
         assert self.transformable
@@ -225,12 +229,11 @@ class LoopNestExperiment:
         else:
             return self.loopnest.to_lines(0)
 
-
     def get_num_children(self):
         return self.loopnest.get_num_children()
 
     def get_child(self, idx: int):
-        loopnest,pragmalist = self.loopnest.get_child(idx)
+        loopnest, pragmalist = self.loopnest.get_child(idx)
         result = LoopNestExperiment(loopnest, self.pragmalist + pragmalist)
         result.derived_from = self
         return result
@@ -251,9 +254,8 @@ class Experiment:
         result.nestexperiments = self.nestexperiments.copy()
         return result
 
-
     def selector(self):
-        for i,nestexperiment in enumerate(self.nestexperiments):
+        for i, nestexperiment in enumerate(self.nestexperiments):
             def make_child(idx: int):
                 if result := self.derivatives.get(idx):
                     return result
@@ -273,20 +275,19 @@ class Experiment:
 
     def get_child(self, idx: int):
         return mcall(self.selector(), idx)
-        
+
     def children(self):
         for idx in range(self.get_num_children()):
             yield self.get_child(idx)
 
-
     def derivatives_recursive(self, max_depth=None):
         yield self
 
-        if max_depth!=None and max_depth==0:
+        if max_depth != None and max_depth == 0:
             return
 
         for n in self.children():
-            yield from n.derivatives_recursive(max_depth=max_depth-1 if max_depth!=None else None)
+            yield from n.derivatives_recursive(max_depth=max_depth-1 if max_depth != None else None)
 
     def __str__(self):
         return '\n'.join(self.to_lines())
@@ -314,31 +315,30 @@ class Experiment:
 
 
 class Tiling:
-    @staticmethod 
+    @staticmethod
     def get_factory(tilesizes):
         def factory(loop):
-            return Tiling(loop,tilesizes)
+            return Tiling(loop, tilesizes)
         return factory
-    
-    def __init__(self,loop,tilesizes):
-        self.loop = loop 
+
+    def __init__(self, loop, tilesizes):
+        self.loop = loop
         self.tilesizes = tilesizes
         self.num_children = mcount(self.selector())
-
 
     def selector(self):
         loopnest = self.loop.perfectnest()
         n = len(loopnest)
         tilesizes = self.tilesizes
 
-        for d in range(1,n+1):
+        for d in range(1, n+1):
             def make_child(idx: int):
                 origloops = loopnest[:d]
                 keeploops = loopnest[d:]
-                floors = list([Loop.createLoop() for i in range(0,d)])
-                tiles = list([Loop.createLoop() for i in range(0,d)])
+                floors = list([Loop.createLoop() for i in range(0, d)])
+                tiles = list([Loop.createLoop() for i in range(0, d)])
                 newloops = floors + tiles
-                for outer,inner in neighbors(newloops):
+                for outer, inner in neighbors(newloops):
                     outer.subloops = [inner]
                 newloops[-1].subloops = origloops[-1].subloops
 
@@ -348,7 +348,7 @@ class Tiling:
                     sizes.append(tilesizes[leftover % len(tilesizes)])
                     leftover //= len(tilesizes)
                 assert leftover == 0
-                origloopids = [l.name for l in origloops] 
+                origloopids = [l.name for l in origloops]
                 floorids = [floor.name for floor in floors]
                 tileids = [tile.name for tile in tiles]
                 sizes = [str(s) for s in sizes]
@@ -365,37 +365,35 @@ class Tiling:
 
 
 class Threading:
-    @staticmethod 
+    @staticmethod
     def get_factory():
         def factory(loop: Loop):
             return Threading(loop)
         return factory
 
-    def __init__(self,loop):
-        self.loop = loop 
+    def __init__(self, loop):
+        self.loop = loop
 
     def get_num_children(self):
         return 1
 
-    def get_child(self,idx: int):
-        parallel_loop = Loop.createAnonLoop(); 
+    def get_child(self, idx: int):
+        parallel_loop = Loop.createAnonLoop()
         parallel_loop.subloops = self.loop.subloops
         pragma = f"#pragma clang loop({self.loop.name}) parallelize_thread"
         return parallel_loop, [pragma]
 
 
 class Interchange:
-    @staticmethod 
+    @staticmethod
     def get_factory():
         def factory(loop: Loop):
             return Interchange(loop)
         return factory
 
-    def __init__(self, loop:Loop):
-        self.loop = loop 
+    def __init__(self, loop: Loop):
+        self.loop = loop
         self.num_children = mcount(self.selector())
-
-
 
     def selector(self):
         loopnest = self.loop.perfectnest()
@@ -403,13 +401,13 @@ class Interchange:
 
         # If there is nothing to permute
         if n <= 1:
-            return 
+            return
 
         num_children = (n-1)
-        for i in range(1,n-1):
+        for i in range(1, n-1):
             num_children *= i
 
-        for d in range(1,n+1):
+        for d in range(1, n+1):
             def make_child(idx: int):
                 orignest = loopnest.copy()
                 remaining = loopnest.copy()
@@ -420,16 +418,16 @@ class Interchange:
                 # New topmost loop cannot be the old topmost
                 # Otherwise it should be an interchange of the nested loop; this also excludes the identity permutation
                 select = i % (len(remaining) - 1) + 1
-                i //= (len(remaining) - 1) 
+                i //= (len(remaining) - 1)
                 perm.append(remaining[select])
                 del remaining[select]
 
                 while remaining:
                     select = i % len(remaining)
-                    i //= len(remaining) 
+                    i //= len(remaining)
                     perm.append(remaining[select])
                     del remaining[select]
-                
+
                 assert i == 0
                 assert len(perm) == n
                 assert len(remaining) == 0
@@ -451,11 +449,10 @@ class Interchange:
                 return newperm[0], [pragma]
             yield num_children, make_child
 
-
     def get_num_children(self):
         return self.num_children
 
-    def get_child(self,idx: int):
+    def get_child(self, idx: int):
         return mcall(self.selector(), idx)
 
 
@@ -484,6 +481,8 @@ def as_dot(baseexperiment: Experiment, max_depth=None):
 
 # Decorator
 commands = {}
+
+
 def subcommand(name):
     def command_func(_func):
         global commands
@@ -527,7 +526,6 @@ def example(parser, args):
 
         root = Experiment()
         root.nestexperiments.append(LoopNestExperiment(example, []))
-        #expand_searchtree(root, remaining_depth=args.maxdepth)
 
         for line in as_dot(root, max_depth=args.maxdepth):
             print(line)
@@ -535,16 +533,16 @@ def example(parser, args):
 
 
 def read_json(files):
-        root = Experiment()
-        for fn in files:
-            with mkpath(fn).open() as fo:
-                data = json.load(fo)
-            loopnests = data["loopnests"]
-            for ln in loopnests:
-                nestroot = json_to_loops(ln["topmost"])
-                exroot = LoopNestExperiment(nestroot, [])
-                root.nestexperiments.append(exroot)
-        return root
+    root = Experiment()
+    for fn in files:
+        with mkpath(fn).open() as fo:
+            data = json.load(fo)
+        loopnests = data["loopnests"]
+        for ln in loopnests:
+            nestroot = json_to_loops(ln["topmost"])
+            exroot = LoopNestExperiment(nestroot, [])
+            root.nestexperiments.append(exroot)
+    return root
 
 
 @subcommand("jsonfile")
@@ -565,13 +563,15 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
 
     cmdline = [ccargs.cc]
     cmdline += ccfiles
-    cmdline += ccargs.ccflags 
+    cmdline += ccargs.ccflags
     cmdline += ['-iquote', ccargs.cwd]
     for ccf in ccargs.ccfiles:
         cmdline += ['-iquote', (ccargs.cwd / ccf).parent]
-    cmdline += ['-mllvm', '-polly', '-mllvm', '-polly-process-unprofitable', '-mllvm', '-polly-position=early', '-mllvm', '-polly-reschedule=0', '-mllvm', '-polly-pattern-matching-based-opts=0']
+    cmdline += ['-mllvm', '-polly', '-mllvm', '-polly-process-unprofitable', '-mllvm', '-polly-position=early',
+                '-mllvm', '-polly-reschedule=0', '-mllvm', '-polly-pattern-matching-based-opts=0']
     if debuginfo:
-        cmdline += ['-g', '-gcolumn-info'] # FIXME: loopnests.json overwritten if multiple files passed to clang
+        # FIXME: loopnests.json overwritten if multiple files passed to clang
+        cmdline += ['-g', '-gcolumn-info']
     if os.name == 'nt':
         cmdline += ['-l', r"C:\Users\meinersbur\build\llvm-project\release\lib\libomp.dll.lib"]
     else:
@@ -583,45 +583,48 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
     return cmdline
 
 
-
-def extract_loopnests(tempdir,ccargs,execargs):
+def extract_loopnests(tempdir, ccargs, execargs):
     print("Extract loop nests...")
 
     extractloopnest = tempdir / 'base'
-    extractloopnest.mkdir(parents=True,exist_ok=True)
+    extractloopnest.mkdir(parents=True, exist_ok=True)
     exefile = extractloopnest / ccargs.o.name
 
-    cmdline = make_ccline(ccargs, outfile=exefile, extraflags=['-mllvm', '-polly-output-loopnest=loopnests.json'], debuginfo=True)
-    invoke.diag(*cmdline, cwd=extractloopnest,onerror=invoke.Invoke.EXCEPTION)
-    
+    cmdline = make_ccline(ccargs, outfile=exefile, 
+        extraflags=['-mllvm', '-polly-output-loopnest=loopnests.json'], debuginfo=True)
+    invoke.diag(*cmdline, cwd=extractloopnest, onerror=invoke.Invoke.EXCEPTION)
+
     loopnestfile = extractloopnest / 'loopnests.json'
     root = read_json(files=[loopnestfile])
 
     print("Time the output...")
-    p = invoke.diag(exefile, timeout=execargs.timeout, appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path}, cwd=extractloopnest, onerror=invoke.Invoke.EXCEPTION)
+    p = invoke.diag(exefile, timeout=execargs.timeout, 
+        appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path}, cwd=extractloopnest, onerror=invoke.Invoke.EXCEPTION)
     root.duration = p.walltime
     root.exppath = extractloopnest
     root.expnumber = 0
-    root.depth=1
+    root.depth = 1
     return root
 
 
 expnumber = 1
-def run_experiment(tempdir:pathlib.Path, experiment: Experiment, ccargs,execargs,writedot:bool,root:Experiment):
+
+
+def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execargs, writedot: bool, root: Experiment):
     global expnumber
     expdir = tempdir / f"experiment{expnumber}"
     experiment.expnumber = expnumber
-    logfile =  expdir / 'desc.txt'
+    logfile = expdir / 'desc.txt'
     dotfile = expdir / 'graph.dot'
-    expnumber +=1 
-    expdir.mkdir(parents=True,exist_ok=True)
+    expnumber += 1
+    expdir.mkdir(parents=True, exist_ok=True)
     experiment.exppath = expdir
 
     print(f"Run next experiment in {expdir}")
     print(experiment)
 
     with logfile.open('w+')as f:
-          for line in experiment.to_lines():
+        for line in experiment.to_lines():
             f.write(line)
             f.write('\n')
 
@@ -632,7 +635,7 @@ def run_experiment(tempdir:pathlib.Path, experiment: Experiment, ccargs,execargs
     for x in experiment.nestexperiments:
         rootloopnestexperiment = x
         while rootloopnestexperiment.derived_from != None:
-            rootloopnestexperiment  = rootloopnestexperiment.derived_from 
+            rootloopnestexperiment = rootloopnestexperiment.derived_from
 
         first = None
 
@@ -641,34 +644,37 @@ def run_experiment(tempdir:pathlib.Path, experiment: Experiment, ccargs,execargs
                 continue
             filename = mkpath(loop.filename).resolve()
             line = loop.line-1     # is one-based
-            column = loop.column-1 # is one-based
+            column = loop.column-1  # is one-based
             name = loop.name
 
-            if (first == None) or (first > (line,column)):
-                first = (line,column)
+            if (first == None) or (first > (line, column)):
+                first = (line, column)
 
             contentlines = contents.get(filename)
-            assert contentlines,"Loopnest's file not matched with intput file?!?"
+            assert contentlines, "Loopnest's file not matched with intput file?!?"
 
-            oldline = contentlines[line]    
-            newline = oldline[:column] + f"\n#pragma clang loop id({name})\n" + oldline[column:] # FIXME: if multiple loops per line, ensure that later are replaced first
+            oldline = contentlines[line]
+            # FIXME: if multiple loops per line, ensure that later are replaced first
+            newline = oldline[:column] + \
+                f"\n#pragma clang loop id({name})\n" + oldline[column:]
             contentlines[line] = newline
 
         oldline = contentlines[first[0]]
-        newline = oldline[:first[1]] + '\n' + ''.join(s + '\n' for s in reversed(x.pragmalist)) + oldline[first[1]:] 
+        newline = oldline[:first[1]] + '\n' + \
+            ''.join(s + '\n' for s in reversed(x.pragmalist)) + \
+            oldline[first[1]:]
         contentlines[first[0]] = newline
-
 
     # Writeback files in new dir
     newccfiles = []
-    for k,content in contents.items():
+    for k, content in contents.items():
         filename = expdir / k.name
         createfile(filename, ''.join(content))
         newccfiles.append(filename)
         pass
 
     exefile = expdir / ccargs.o.name
-    cmdline = make_ccline(ccargs, ccfiles=newccfiles, outfile = exefile)
+    cmdline = make_ccline(ccargs, ccfiles=newccfiles, outfile=exefile)
     try:
         invoke.diag(*cmdline, cwd=expdir, onerror=invoke.Invoke.EXCEPTION, std_prefixed=expdir / 'cc.txt')
     except subprocess.CalledProcessError:
@@ -677,7 +683,8 @@ def run_experiment(tempdir:pathlib.Path, experiment: Experiment, ccargs,execargs
         return
 
     try:
-        p = invoke.diag(exefile, cwd=expdir, onerror=invoke.Invoke.EXCEPTION,timeout=execargs.timeout, std_prefixed=expdir / 'exec.txt', appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path})
+        p = invoke.diag(exefile, cwd=expdir, onerror=invoke.Invoke.EXCEPTION, timeout=execargs.timeout,
+                        std_prefixed=expdir / 'exec.txt', appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path})
     except subprocess.TimeoutExpired:
         # Assume failure
         experiment.duration = math.inf
@@ -689,11 +696,9 @@ def run_experiment(tempdir:pathlib.Path, experiment: Experiment, ccargs,execargs
         f.write(f"Execution completed in {p.walltime}\n")
 
     if writedot:
-           with dotfile.open('w+') as f:
-                        for line in as_dot(root):
-                            print(line,file=f)
-
-
+        with dotfile.open('w+') as f:
+            for line in as_dot(root):
+                print(line, file=f)
 
 
 def parse_cc_cmdline(cmdline):
@@ -705,31 +710,31 @@ def parse_cc_cmdline(cmdline):
     i = 1
     while i < len(cmdline):
         arg = cmdline[i]
-        nextarg = cmdline[i+1] if i +1 <len(cmdline) else None
+        nextarg = cmdline[i+1] if i + 1 < len(cmdline) else None
 
-        if arg == '-o' and nextarg !=None:
-            o = mkpath(nextarg) 
-            i+=2
+        if arg == '-o' and nextarg != None:
+            o = mkpath(nextarg)
+            i += 2
             continue
 
         if arg.startswith('-'):
-              ccflags.append(arg)
-              i+=1
-              continue
-            
+            ccflags.append(arg)
+            i += 1
+            continue
+
         fn = mkpath(arg)
         if not fn.suffix.lower() in {'.c', '.cxx', '.cpp'}:
-              ccflags.append(arg)
-              i+=1
-              continue
+            ccflags.append(arg)
+            i += 1
+            continue
 
         if not fn.is_file():
-              ccflags.append(arg)
-              i+=1
-              continue
+            ccflags.append(arg)
+            i += 1
+            continue
 
         ccfiles.append(fn)
-        i+=1
+        i += 1
 
     result = argparse.Namespace()
     result.cwd = pathlib.Path.cwd()
@@ -740,41 +745,45 @@ def parse_cc_cmdline(cmdline):
     return result
 
 
-
-class PriorityQueue:    
+class PriorityQueue:
     class Item:
-        def __init__(self,priority:float,item):
-            self.priority= priority
+        def __init__(self, priority: float, item):
+            self.priority = priority
             self.item = item
 
         def __eq__(self, other):
             return self.priority == other.priority
+
         def __ne__(self, other):
             return self.priority != other.priority
+
         def __gt__(self, other):
-            return  self.priority > other.priority
+            return self.priority > other.priority
+
         def __lt__(self, other):
             return self.priority < other.priority
+
         def __ge__(self, other):
             return self.priority >= other.priority
+
         def __le__(self, other):
             return self.priority <= other.priority
 
-    def __init__(self,*args,key=lambda x:x):
+    def __init__(self, *args, key=lambda x: x):
         self.key = key
-        self.elts = [PriorityQueue.Item(key(x),x) for x in args]
+        self.elts = [PriorityQueue.Item(key(x), x) for x in args]
         heapq.heapify(self.elts)
 
     def push(self, item):
         heapq.heappush(self.elts, PriorityQueue.Item(self.key(item), item))
 
     def pop(self):
-       return heapq.heappop(self.elts).item
+        return heapq.heappop(self.elts).item
 
     def top(self):
         return self.elts[0].item
 
-    def replace(self,item):
+    def replace(self, item):
         heapq.heapreplace(self.elts, PriorityQueue.Item(self.key(item), item))
 
     def update(self):
@@ -784,7 +793,7 @@ class PriorityQueue:
         return len(self.elts)
 
     def empty(self):
-        return len(self.elts)==0
+        return len(self.elts) == 0
 
 
 @subcommand("autotune")
@@ -793,7 +802,8 @@ def autotune(parser, args):
         add_boolean_argument(parser, 'keep')
         parser.add_argument('--ld-library-path', action='append')
         parser.add_argument('--outdir')
-        parser.add_argument('--timeout', type=float, help="Max exec time in seconds; default is no timout")
+        parser.add_argument('--timeout', type=float,
+                            help="Max exec time in seconds; default is no timout")
         parser.add_argument('ccline', nargs=argparse.REMAINDER)
     if args:
         ccargs = parse_cc_cmdline(args.ccline)
@@ -802,50 +812,50 @@ def autotune(parser, args):
 
         execargs.ld_library_path = None
         if args.ld_library_path != None:
-                execargs.ld_library_path = ':'.join(args.ld_library_path)
+            execargs.ld_library_path = ':'.join(args.ld_library_path)
 
-        execargs.timeout = None 
+        execargs.timeout = None
         if args.timeout != None:
-                execargs.timeout = datetime.timedelta(seconds=args.timeout)
+            execargs.timeout = datetime.timedelta(seconds=args.timeout)
 
         outdir = mkpath(args.outdir)
         maxdepth = 0
 
-
         with contextlib.ExitStack() as stack:
             if args.keep:
-                d = tempfile.mkdtemp(dir=outdir,prefix='mctree-')
+                d = tempfile.mkdtemp(dir=outdir, prefix='mctree-')
             else:
-                d = stack.enter_context(tempfile.TemporaryDirectory(dir=outdir,prefix='mctree-'))
+                d = stack.enter_context(
+                    tempfile.TemporaryDirectory(dir=outdir, prefix='mctree-'))
             d = mkpath(d)
-            
+
             bestfile = d / 'best.txt'
-            csvfile =  d / 'experiments.csv'
+            csvfile = d / 'experiments.csv'
             newbestcsvfile = d / 'newbest.csv'
             csvlog = csvfile.open('w+')
             newbestlog = newbestcsvfile.open('w+')
 
-
-
-
-            root = extract_loopnests(d,ccargs= ccargs,execargs= execargs)
+            root = extract_loopnests(d, ccargs=ccargs, execargs=execargs)
             print("Baseline is")
             print(root)
             print("")
 
-            priorotyfunc = lambda x: -math.inf if x.duration is None else -x.duration.total_seconds()
-            pq = PriorityQueue(root,key=priorotyfunc)
+            def priorotyfunc(
+                x): return -math.inf if x.duration is None else -x.duration.total_seconds()
+            pq = PriorityQueue(root, key=priorotyfunc)
             bestsofar = root
 
-            csvlog.write(f"{root.expnumber},{root.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
-            newbestlog.write(f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
-
+            csvlog.write(
+                f"{root.expnumber},{root.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+            newbestlog.write(
+                f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
 
             while not pq.empty():
                 item = pq.top()
 
                 if item.duration == None:
-                    run_experiment(d, item, ccargs=ccargs,execargs=execargs,writedot=True,root=root)
+                    run_experiment(d, item, ccargs=ccargs,
+                                   execargs=execargs, writedot=True, root=root)
                     if item.duration == math.inf:
                         # Invalid pragmas? Remove experiment entirely
                         print("Experiment failed")
@@ -854,7 +864,8 @@ def autotune(parser, args):
 
                     pq.update()
                     if bestsofar.duration > item.duration:
-                        print(f"New experiment better than old (old: {bestsofar.duration}, new: {item.duration})")
+                        print(
+                            f"New experiment better than old (old: {bestsofar.duration}, new: {item.duration})")
                         print(f"Path {item.exppath}\n")
                         print(item)
                         bestsofar = item
@@ -862,17 +873,20 @@ def autotune(parser, args):
                             f.write(f"Best experiment so far\n")
                             f.write(f"Time: {bestsofar.duration}\n")
                             f.write(f"Path: {bestsofar.exppath}\n\n")
-                            for line in  bestsofar.to_lines():
+                            for line in bestsofar.to_lines():
                                 f.write(line)
                                 f.write('\n')
-                        newbestlog.write(f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+                        newbestlog.write(
+                            f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
                         newbestlog.flush()
-                    csvlog.write(f"{item.expnumber},{item.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+                    csvlog.write(
+                        f"{item.expnumber},{item.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
                     csvlog.flush()
                     continue
 
                 if not item.has_expanded:
-                    print(f"Selecting best experiment {item.duration} for expansion")
+                    print(
+                        f"Selecting best experiment {item.duration} for expansion")
                     expand_searchtree(item, remaining_depth=1)
                     for child in item.derivatives:
                         pq.push(child)
@@ -904,8 +918,8 @@ def main(argv: str) -> int:
     args = parser.parse_args(str(v) for v in argv[1:])
 
     if args.tiling:
-        tilesizes = [2,4]
-        if  args.tiling_sizes!=None:
+        tilesizes = [2, 4]
+        if args.tiling_sizes != None:
             tilesizes = [int(s) for s in args.tiling_sizes.split(',')]
         transformers.append(Tiling.get_factory(tilesizes))
     if args.threading:
