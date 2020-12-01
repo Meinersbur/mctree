@@ -348,7 +348,7 @@ class Tiling:
 
                 sizes = []
                 leftover = idx
-                for i in range(n):
+                for i in range(d):
                     sizes.append(tilesizes[leftover % len(tilesizes)])
                     leftover //= len(tilesizes)
                 assert leftover == 0
@@ -357,7 +357,7 @@ class Tiling:
                 tileids = [tile.name for tile in tiles]
                 sizes = [str(s) for s in sizes]
                 pragma = f"#pragma clang loop({','.join(origloopids)}) tile sizes({','.join(sizes)}) floor_ids({','.join(floorids)}) tile_ids({','.join(tileids)})"
-                return newloops[0],  [pragma]
+                return newloops[0], [pragma]
 
             yield len(tilesizes)**d, make_child
 
