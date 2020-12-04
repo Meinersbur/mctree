@@ -941,7 +941,7 @@ def main(argv: str) -> int:
     args = parser.parse_args(str(v) for v in argv[1:])
 
     if args.tiling:
-        tilesizes = [2, 4]
+        tilesizes = [4, 16, 64, 256]
         if args.tiling_sizes != None:
             tilesizes = [int(s) for s in args.tiling_sizes.split(',')]
         transformers.append(Tiling.get_factory(tilesizes))
