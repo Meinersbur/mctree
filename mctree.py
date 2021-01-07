@@ -36,9 +36,9 @@ def mselect(seq, idx: int):
     assert False, "Larger index than total elements"
 
 
-def mcall(seq, idx: int):
+def mcall(seq, loopcounter, idx: int):
     pos, elt = mselect(seq, idx)
-    return elt(pos)
+    return elt(loopcounter, pos)
 
 
 def neighbors(seq):
@@ -53,13 +53,10 @@ transformers = []
 
 
 class Loop:
-    numloopssofar = 0
-
     @classmethod
-    def createLoop(cls, name: str = None):
+    def createLoop(cls, loopcounter=None, name: str = None):
         if not name:
-            Loop.numloopssofar += 1
-            name = f'loop{Loop.numloopssofar}'
+            name = f'loop{loopcounter.nextId()}'
         return cls(isroot=False, istransformable=True, name=name)
 
     @classmethod
@@ -92,21 +89,24 @@ class Loop:
             looptransformers = (t(self) for t in transformers)
             for transformer in looptransformers:
                 yield transformer.get_num_children(), transformer.get_child
-        for i, subloop in enumerate(self.subloops):
-            subloop = self.subloops[i]
 
-            def replace_loop(idx: int):
-                newsubloop, pragmas = subloop.get_child(idx)
+        def make_replace_loop_closure(i,subloop):
+            def replace_loop(loopcounter, idx: int):
+                newsubloop, pragmas = subloop.get_child(loopcounter, idx)
                 newloop = self.clone()
                 newloop.subloops[i] = newsubloop
                 return newloop, pragmas
-            yield subloop.get_num_children(), replace_loop
+            return replace_loop
+
+        for i, subloop in enumerate(self.subloops):
+            assert subloop == self.subloops[i]          
+            yield subloop.get_num_children(), make_replace_loop_closure(i, subloop)
 
     def get_num_children(self):
         return mcount(self.selector())
 
-    def get_child(self, idx: int):
-        return mcall(self.selector(), idx)
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
 
     def perfectnest(self):
         assert self.transformable
@@ -130,8 +130,8 @@ class Loop:
         for n in self.subloops:
             yield from n.subloops_recursive()
 
-    def new_subloop(self):
-        newloop = Loop.createLoop()
+    def new_subloop(self,loopcounter):
+        newloop = Loop.createLoop(loopcounter)
         self.subloops.append(newloop)
         return newloop
 
@@ -219,11 +219,25 @@ def json_to_loops(topmost):
     return result
 
 
+class LoopCounter:
+    def __init__(self):
+        self.prevloopid = 0
+
+    def clone(self):
+        result = LoopCounter()
+        result.prevloopid = self.prevloopid
+        return result
+
+    def nextId(self):
+        self.prevloopid += 1
+        return self.prevloopid 
+
 class LoopNestExperiment:
-    def __init__(self, loopnest, pragmalist):
+    def __init__(self, loopnest, pragmalist, loopcounter):
         self.loopnest = loopnest
         self.pragmalist = pragmalist
         self.derived_from = None
+        self.loopcounter = loopcounter
 
     def __str__(self):
         return '\n'.join(self.to_lines())
@@ -238,8 +252,9 @@ class LoopNestExperiment:
         return self.loopnest.get_num_children()
 
     def get_child(self, idx: int):
-        loopnest, pragmalist = self.loopnest.get_child(idx)
-        result = LoopNestExperiment(loopnest, self.pragmalist + pragmalist)
+        resetloopcounter = self.loopcounter.clone()
+        loopnest, pragmalist = self.loopnest.get_child(resetloopcounter, idx)
+        result = LoopNestExperiment(loopnest, self.pragmalist + pragmalist, loopcounter=resetloopcounter)
         result.derived_from = self
         return result
 
@@ -260,8 +275,9 @@ class Experiment:
         return result
 
     def selector(self):
-        for i, nestexperiment in enumerate(self.nestexperiments):
-            def make_child(idx: int):
+        def make_make_child_closure(i, nestexperiment):
+            def make_child(loopcounter, idx: int):
+                assert loopcounter == None
                 if result := self.derivatives.get(idx):
                     return result
 
@@ -273,13 +289,16 @@ class Experiment:
 
                 self.derivatives[idx] = result
                 return result
-            yield nestexperiment.get_num_children(), make_child
+            return make_child
+
+        for i, nestexperiment in enumerate(self.nestexperiments):          
+            yield nestexperiment.get_num_children(), make_make_child_closure(i,nestexperiment)
 
     def get_num_children(self):
         return mcount(self.selector())
 
     def get_child(self, idx: int):
-        return mcall(self.selector(), idx)
+        return mcall(self.selector(), None, idx=idx)
 
     def children(self):
         for idx in range(self.get_num_children()):
@@ -335,13 +354,13 @@ class Tiling:
         self.tilesizes = tilesizes
         self.num_children = mcount(self.selector())
 
-    def apply_transform(self,loopnest,sizes,peel):
+    def apply_transform(self,loopnest,loopcounter,sizes,peel):
         d = len(sizes)
         assert d >= 1
         origloops = loopnest[:d]
         keeploops = loopnest[d:]
-        floors = list([Loop.createLoop() for i in range(0, d)])
-        tiles = list([Loop.createLoop() for i in range(0, d)])
+        floors = list([Loop.createLoop(name=f'floor{loopcounter.nextId()}') for i in range(0, d)])
+        tiles = list([Loop.createLoop(name=f'tile{loopcounter.nextId()}') for i in range(0, d)])
         newloops = floors + tiles
         for outer, inner in neighbors(newloops):
             outer.subloops = [inner]
@@ -360,24 +379,26 @@ class Tiling:
         n = len(loopnest)
         tilesizes = self.tilesizes
 
-        for d in range(1, n+1):
-            def make_child(idx: int):
+        def make_child_closure(d,enable_peeling):
+            def make_child(loopcounter,idx: int):
                 sizes = []
                 leftover = idx
                 for i in range(d):
                     sizes.append(tilesizes[leftover % len(tilesizes)])
                     leftover //= len(tilesizes)
-                assert 0 <= leftover <= 1
-                enable_peeling = (leftover==1)
-                return self.apply_transform(loopnest,sizes,enable_peeling)
+                assert leftover == 0
+                return self.apply_transform(loopnest=loopnest,loopcounter=loopcounter,sizes=sizes,peel=enable_peeling)
+            return make_child
 
-            yield (len(tilesizes)**d)*2, make_child
+        for d in range(1, n+1):
+            yield len(tilesizes)**d, make_child_closure(d,enable_peeling=False)
+            yield len(tilesizes)**d, make_child_closure(d,enable_peeling=True)
 
     def get_num_children(self):
         return self.num_children
 
-    def get_child(self, idx: int):
-        return mcall(self.selector(), idx)
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
 
 
 class Threading:
@@ -393,7 +414,7 @@ class Threading:
     def get_num_children(self):
         return 1
 
-    def get_child(self, idx: int):
+    def get_child(self, loopcounter, idx: int):
         parallel_loop = Loop.createAnonLoop()
         parallel_loop.subloops = self.loop.subloops
         pragma = f"#pragma clang loop({self.loop.name}) parallelize_thread"
@@ -419,12 +440,8 @@ class Interchange:
         if n <= 1:
             return
 
-        num_children = (n-1)
-        for i in range(1, n-1):
-            num_children *= i
-
-        for d in range(1, n+1):
-            def make_child(idx: int):
+        def make_make_child_closure(d):
+            def make_child(loopcounter, idx: int):
                 orignest = loopnest.copy()
                 remaining = loopnest.copy()
                 perm = []
@@ -453,7 +470,7 @@ class Interchange:
                     del perm[-1]
                     del orignest[-1]
 
-                newperm = [Loop.createLoop() for l in perm]
+                newperm = [Loop.createLoop(name=f'perm{loopcounter.nextId()}') for l in perm]
                 for p, c in neighbors(newperm):
                     p.subloops = [c]
                 newperm[-1].subloops = orignest[-1].subloops
@@ -463,13 +480,19 @@ class Interchange:
                 newpermids = [p.name for p in newperm]
                 pragma = f"#pragma clang loop({','.join(nestids)}) interchange permutation({','.join(permids)}) permuted_ids({','.join(newpermids)})"
                 return newperm[0], [pragma]
-            yield num_children, make_child
+            return make_child
+
+        num_children = (n-1)
+        for i in range(1, n-1):
+            num_children *= i
+        for d in range(1, n+1):
+            yield num_children, make_make_child_closure(d)
 
     def get_num_children(self):
         return self.num_children
 
-    def get_child(self, idx: int):
-        return mcall(self.selector(), idx)
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
 
 
 class Reversal:
@@ -485,8 +508,8 @@ class Reversal:
     def get_num_children(self):
         return 1
 
-    def get_child(self, idx: int):
-        reversed_loop = Loop.createLoop()
+    def get_child(self, loopcounter, idx: int):
+        reversed_loop = Loop.createLoop(name=f'rev{loopcounter.nextId()}')
         reversed_loop.subloops = self.loop.subloops
         pragma = f'#pragma clang loop({self.loop.name}) reverse reversed_id({reversed_loop.name})'
         return reversed_loop, [pragma]
@@ -555,12 +578,13 @@ def example(parser, args):
     if parser:
         pass
     if args:
+        loopcounter = LoopCounter()
         example = Loop.createRoot()
-        example.new_subloop()
-        example.new_subloop().new_subloop()
+        example.new_subloop(loopcounter)
+        example.new_subloop(loopcounter).new_subloop(loopcounter)
 
         root = Experiment()
-        root.nestexperiments.append(LoopNestExperiment(example, []))
+        root.nestexperiments.append(LoopNestExperiment(example, [], loopcounter))
 
         for line in as_dot(root, max_depth=args.maxdepth):
             print(line)
