@@ -515,6 +515,50 @@ class Reversal:
         return reversed_loop, [pragma]
 
 
+
+class Unrolling:
+    @staticmethod
+    def get_factory(factors, enable_full):
+        def factory(loop: Loop):
+            return Unrolling(loop,factors,enable_full)
+        return factory
+
+    def __init__(self, loop: Loop, factors, enable_full):
+        self.loop = loop
+        self.factors = factors
+        self.enable_full = enable_full
+        self.num_children = mcount(self.selector())
+
+    def selector(self):
+        loop = self.loop
+
+        def make_full_unrolling(loopcounter, idx: int):
+            assert idx == 0
+            unrolled_loop = Loop.createAnonLoop()
+            unrolled_loop.subloops = self.loop.subloops
+            pragma = f"#pragma clang loop({self.loop.name}) unrolling full"
+            return unrolled_loop, [pragma]
+
+        def make_partial_unrolling(loopcounter, idx: int):
+            factor = self.factors[idx]
+            unrolled_loop = Loop.createLoop(name=f'unroll{loopcounter.nextId()}')
+            unrolled_loop.subloops = self.loop.subloops
+            pragma = f"#pragma clang loop({self.loop.name}) unrolling factor({factor})"
+            return unrolled_loop, [pragma]                
+
+        if self.enable_full:
+            yield 1, make_full_unrolling
+        yield len(self.factors), make_partial_unrolling
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
+
+
+
+
 def as_dot(baseexperiment: Experiment, max_depth=None, filter=None, decendfilter=None):
     yield 'digraph G {'
     yield '  rankdir=LR;'
@@ -964,6 +1008,9 @@ def main(argv: str) -> int:
     add_boolean_argument(parser, "--threading", default=True)
     add_boolean_argument(parser, "--interchange", default=True)
     add_boolean_argument(parser, "--reversal", default=True)
+    add_boolean_argument(parser, "--unrolling", default=True)
+    add_boolean_argument(parser, "--unrolling-full", default=True)
+    parser.add_argument('--unrolling-factors')
 
     subparsers = parser.add_subparsers(dest='subcommand')
     for cmd, func in commands.items():
@@ -982,6 +1029,11 @@ def main(argv: str) -> int:
         transformers.append(Interchange.get_factory())
     if args.reversal:
         transformers.append(Reversal.get_factory())
+    if args.unrolling:
+        factors = [2, 4, 8]
+        if args.unrolling_factors != None:
+            factors = [int(s) for s in args.unrolling_factors.split(',')]
+        transformers.append(Unrolling.get_factory(factors,args.unrolling_full))
 
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:
