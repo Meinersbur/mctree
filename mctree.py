@@ -335,6 +335,26 @@ class Tiling:
         self.tilesizes = tilesizes
         self.num_children = mcount(self.selector())
 
+    def apply_transform(self,loopnest,sizes,peel):
+        d = len(sizes)
+        assert d >= 1
+        origloops = loopnest[:d]
+        keeploops = loopnest[d:]
+        floors = list([Loop.createLoop() for i in range(0, d)])
+        tiles = list([Loop.createLoop() for i in range(0, d)])
+        newloops = floors + tiles
+        for outer, inner in neighbors(newloops):
+            outer.subloops = [inner]
+        newloops[-1].subloops = origloops[-1].subloops
+
+        origloopids = [l.name for l in origloops]
+        floorids = [floor.name for floor in floors]
+        tileids = [tile.name for tile in tiles]
+        sizes = [str(s) for s in sizes]
+        peelclause = " peel(rectangular)" if peel else ""
+        pragma = f"#pragma clang loop({','.join(origloopids)}) tile sizes({','.join(sizes)}){peelclause} floor_ids({','.join(floorids)}) tile_ids({','.join(tileids)})"
+        return newloops[0], [pragma]
+
     def selector(self):
         loopnest = self.loop.perfectnest()
         n = len(loopnest)
@@ -342,29 +362,16 @@ class Tiling:
 
         for d in range(1, n+1):
             def make_child(idx: int):
-                origloops = loopnest[:d]
-                keeploops = loopnest[d:]
-                floors = list([Loop.createLoop() for i in range(0, d)])
-                tiles = list([Loop.createLoop() for i in range(0, d)])
-                newloops = floors + tiles
-                for outer, inner in neighbors(newloops):
-                    outer.subloops = [inner]
-                newloops[-1].subloops = origloops[-1].subloops
-
                 sizes = []
                 leftover = idx
                 for i in range(d):
                     sizes.append(tilesizes[leftover % len(tilesizes)])
                     leftover //= len(tilesizes)
-                assert leftover == 0
-                origloopids = [l.name for l in origloops]
-                floorids = [floor.name for floor in floors]
-                tileids = [tile.name for tile in tiles]
-                sizes = [str(s) for s in sizes]
-                pragma = f"#pragma clang loop({','.join(origloopids)}) tile sizes({','.join(sizes)}) floor_ids({','.join(floorids)}) tile_ids({','.join(tileids)})"
-                return newloops[0], [pragma]
+                assert 0 <= leftover <= 1
+                enable_peeling = (leftover==1)
+                return self.apply_transform(loopnest,sizes,enable_peeling)
 
-            yield len(tilesizes)**d, make_child
+            yield (len(tilesizes)**d)*2, make_child
 
     def get_num_children(self):
         return self.num_children

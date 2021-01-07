@@ -1,4 +1,0 @@
-Experiment 1
-Function kernel_covariance:
-  #pragma clang loop(loop1) tile sizes(16) floor_ids(loop10) tile_ids(loop11)
-Execution completed in 0:00:15.950365
