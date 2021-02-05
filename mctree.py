@@ -202,10 +202,10 @@ def gist(root, childids, oldloop, newloop):
     return newroot
 
 
-def json_to_loops(topmost):
+def json_to_loops(topmost, loopcounter):
     result = Loop.createRoot()
     for tm in topmost:
-        loop = Loop.createLoop()
+        loop = Loop.createLoop(loopcounter)
         loop.filename = mkpath(tm["path"])
         loop.line = tm["line"]
         loop.column = tm["column"]
@@ -213,7 +213,7 @@ def json_to_loops(topmost):
         loop.exit = tm["exit"]
         loop.function = tm["function"]
         loop.isperfectnest = tm.get('perfectnest')
-        sublooproot = json_to_loops(tm["subloops"])
+        sublooproot = json_to_loops(tm["subloops"], loopcounter)
         loop.subloops = sublooproot.subloops
         result.add_subloop(loop)
     return result
@@ -641,9 +641,10 @@ def read_json(files):
         with mkpath(fn).open() as fo:
             data = json.load(fo)
         loopnests = data["loopnests"]
-        for ln in loopnests:
-            nestroot = json_to_loops(ln["topmost"])
-            exroot = LoopNestExperiment(nestroot, [])
+        loopcounter = LoopCounter()
+        for ln in loopnests:            
+            nestroot = json_to_loops(ln["topmost"], loopcounter)
+            exroot = LoopNestExperiment(nestroot, [], loopcounter=loopcounter)
             root.nestexperiments.append(exroot)
     return root
 
