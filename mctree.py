@@ -668,9 +668,13 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
     cmdline += ccfiles
     cmdline += ccargs.ccflags
     cmdline += ['-iquote', ccargs.cwd]
+    cwdincdirs = set()
     for ccf in ccargs.ccfiles:
-        cmdline += ['-iquote', (ccargs.cwd / ccf).parent]
-    cmdline += ['-mllvm', '-polly', '-mllvm', '-polly-process-unprofitable', '-mllvm', '-polly-position=early',
+        cwdincdirs.add((ccargs.cwd / ccf).parent)
+    for incdir  in cwdincdirs:
+        cmdline += ['-iquote', incdir]
+    cmdline += ['-flegacy-pass-manager', '-ferror-limit=1',
+                '-mllvm', '-polly', '-mllvm', '-polly-process-unprofitable',
                 '-mllvm', '-polly-reschedule=0', '-mllvm', '-polly-pattern-matching-based-opts=0']
     if debuginfo:
         # FIXME: loopnests.json overwritten if multiple files passed to clang
@@ -679,7 +683,12 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
         cmdline += ['-l', r"C:\Users\meinersbur\build\llvm-project\release\lib\libomp.dll.lib"]
     else:
         cmdline += ['-fopenmp']
-    cmdline += ['-mllvm', '-polly-omp-backend=LLVM']
+        #cmdline += ['-I/usr/lib/llvm-9/lib/clang/9.0.1/include/']
+    if True:
+        cmdline += ['-mllvm', '-enable-load-pre=0']
+    else:
+        cmdline += ['-mllvm', '-polly-position=early']
+    cmdline += ['-mllvm', '-polly-omp-backend=LLVM', '-mllvm', '-polly-ast-detect-parallel', '-mllvm', '-polly-parallel', '-mllvm', '-polly-scheduling=static']
     cmdline += ['-Werror=pass-failed']
     cmdline += extraflags
     cmdline += ['-o', outfile]
