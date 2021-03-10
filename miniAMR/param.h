@@ -25,11 +25,11 @@
 // ************************************************************************
 
 max_num_blocks = 500;
-num_refine = 5;
+num_refine = 16;
 uniform_refine = 0;
-x_block_size = 10;
-y_block_size = 10;
-z_block_size = 10;
+x_block_size = 64;
+y_block_size = 64;
+z_block_size = 32;
 num_vars = 40;
 comm_vars = 0;
 init_block_x = 1;
