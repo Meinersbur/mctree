@@ -86,16 +86,16 @@ void kernel_gemm(int ni, int nj, int nk,
  #endif
 
 #if 1
-  #pragma clang loop(j2) pack array(A) allocate(malloc)
-  #pragma clang loop(i1) pack array(B) allocate(malloc)
-  #pragma clang loop(i1,j1,k1,i2,j2) interchange permutation(j1,k1,i1,j2,i2)
-  #pragma clang loop(i,j,k) tile sizes(96,2048,256) floor_ids(i1,j1,k1) tile_ids(i2,j2,k2)
+  //#pragma clang loop(j2) pack array(A) allocate(malloc)
+ // #pragma clang loop(i1) pack array(B) allocate(malloc)
+  //#pragma clang loop(i1,j1,k1,i2,j2) interchange permutation(j1,k1,i1,j2,i2)
+  //#pragma clang loop(i,j,k) tile sizes(96,2048,256) floor_ids(i1,j1,k1) tile_ids(i2,j2,k2)
 
-  #pragma clang loop id(i)
+  //#pragma clang loop id(i)
   for (i = 0; i < _PB_NI; i++) {
-       #pragma clang loop id(j)
+    //   #pragma clang loop id(j)
     for (k = 0; k < _PB_NK; k++) {
-            #pragma clang loop id(k)
+    //        #pragma clang loop id(k)
        for (j = 0; j < _PB_NJ; j++)
 	        C[i][j] += alpha * A[i][k] * B[k][j];
     }

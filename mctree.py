@@ -948,7 +948,7 @@ def autotune(parser, args):
             print("")
 
             def priorotyfunc(x): 
-                return -math.inf if x.duration is None else -x.duration.total_seconds()
+                return -math.inf if x.duration is None else x.duration.total_seconds()
             pq = PriorityQueue(root, key=priorotyfunc)
             closed = set()
             bestsofar = root
