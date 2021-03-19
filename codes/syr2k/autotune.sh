@@ -14,6 +14,6 @@ fi
   "${CLANG_PREFIX}/bin/clang" -I"${CLANG_PREFIX}/projects/openmp/runtime/src" -I"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" -L"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
   -mllvm -polly-position=early -O3 -march=native \
   *.c -o "${BASENAME}" \
-  -DLARGE_DATASET -I"${SCRIPTPATH}" \
-  -mllvm -polly-only-func=kernel_syr2k \
+  -I"${SCRIPTPATH}" \
+  -DLARGE_DATASET -mllvm -polly-only-func=kernel_syr2k \
   )
