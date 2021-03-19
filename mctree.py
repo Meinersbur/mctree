@@ -683,7 +683,7 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
         cmdline += ['-l', r"C:\Users\meinersbur\build\llvm-project\release\lib\libomp.dll.lib"]
     else:
         cmdline += ['-fopenmp']
-    cmdline += ['-mllvm', '-polly-omp-backend=LLVM', '-mllvm', '-polly-ast-detect-parallel', '-mllvm', '-polly-parallel', '-mllvm', '-polly-scheduling=static']
+    cmdline += ['-mllvm', '-polly-omp-backend=LLVM', '-mllvm', '-polly-scheduling=static']
     cmdline += ['-Werror=pass-failed']
     cmdline += extraflags
     cmdline += ['-o', outfile]
