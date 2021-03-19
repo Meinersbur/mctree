@@ -39,7 +39,7 @@ void init_array(int n, int m,
 
 /* DCE code. Must scan the entire live-out data.
    Can be used also to check the correctness of the output. */
-static
+static __attribute__((noinline))
 void print_array(int n,
 		 DATA_TYPE POLYBENCH_2D(C,N,N,n,n))
 {
