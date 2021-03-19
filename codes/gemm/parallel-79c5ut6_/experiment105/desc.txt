@@ -1,4 +1,0 @@
-Experiment 105
-Function kernel_gemm:
-  #pragma clang loop(loop3) parallelize_thread
-Execution completed in 0:00:00.267388

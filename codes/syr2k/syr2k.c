@@ -1,12 +1,12 @@
 /* syr2k.c: this file is part of PolyBench/C */
 
 #include <stdio.h>
-//#include <unistd.h>
+#include <unistd.h>
 #include <string.h>
 #include <math.h>
 
 /* Include polybench common header. */
-#include "polybench.h"
+#include <polybench.h>
 
 /* Include benchmark-specific header. */
 #include "syr2k.h"
@@ -43,7 +43,6 @@ static
 void print_array(int n,
 		 DATA_TYPE POLYBENCH_2D(C,N,N,n,n))
 {
-    return;
   int i, j;
 
   POLYBENCH_DUMP_START;
@@ -76,18 +75,18 @@ void kernel_syr2k(int n, int m,
 //A is NxM
 //B is NxM
 //C is NxN
-//#pragma scop
+#pragma scop
   for (i = 0; i < _PB_N; i++) {
     for (j = 0; j <= i; j++)
       C[i][j] *= beta;
-  }
-  for (i = 0; i < _PB_N; i++) {
     for (k = 0; k < _PB_M; k++)
-      for (j = 0; j <= i; j++) {
-	      C[i][j] += A[j][k]*alpha*B[i][k] + B[j][k]*alpha*A[i][k];
-	    }
+      for (j = 0; j <= i; j++)
+	{
+	  C[i][j] += A[j][k]*alpha*B[i][k] + B[j][k]*alpha*A[i][k];
+	}
   }
-//#pragma endscop
+#pragma endscop
+
 }
 
 

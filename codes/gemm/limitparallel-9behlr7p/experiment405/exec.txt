@@ -1,2 +1,0 @@
-(cd /home/meinersbur/scratch/mctree-exec/mctree-9behlr7p/experiment405 && /home/meinersbur/scratch/mctree-exec/mctree-9behlr7p/experiment405/gemm)
-Exit with code 0 in 0:00:01.171288

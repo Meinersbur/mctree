@@ -1,4 +1,0 @@
-Experiment 324
-Function kernel_covariance:
-  #pragma clang loop(loop7) parallelize_thread
-Execution completed in 0:00:00.671929

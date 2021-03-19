@@ -1,12 +1,12 @@
 /* gemm.c: this file is part of PolyBench/C */
 
 #include <stdio.h>
-//#include <unistd.h>
+#include <unistd.h>
 #include <string.h>
 #include <math.h>
 
 /* Include polybench common header. */
-#include "polybench.h"
+#include <polybench.h>
 
 /* Include benchmark-specific header. */
 #include "gemm.h"
@@ -43,7 +43,6 @@ static
 void print_array(int ni, int nj,
 		 DATA_TYPE POLYBENCH_2D(C,NI,NJ,ni,nj))
 {
-  return;
   int i, j;
 
   POLYBENCH_DUMP_START;
@@ -60,7 +59,7 @@ void print_array(int ni, int nj,
 
 /* Main computational kernel. The whole function will be timed,
    including the call and return. */
-static __attribute__((noinline))
+static
 void kernel_gemm(int ni, int nj, int nk,
 		 DATA_TYPE alpha,
 		 DATA_TYPE beta,
@@ -77,33 +76,16 @@ void kernel_gemm(int ni, int nj, int nk,
 //A is NIxNK
 //B is NKxNJ
 //C is NIxNJ
-//#pragma scop
-#if 1
- for (i = 0; i < _PB_NI; i++) {
-    for (j = 0; j < _PB_NJ; j++)
- 	    C[i][j] *= beta;
- }
- #endif
-
-#if 1
-  //#pragma clang loop(j2) pack array(A) allocate(malloc)
- // #pragma clang loop(i1) pack array(B) allocate(malloc)
-  //#pragma clang loop(i1,j1,k1,i2,j2) interchange permutation(j1,k1,i1,j2,i2)
-  //#pragma clang loop(i,j,k) tile sizes(96,2048,256) floor_ids(i1,j1,k1) tile_ids(i2,j2,k2)
-
-  //#pragma clang loop id(i)
+#pragma scop
   for (i = 0; i < _PB_NI; i++) {
-    //   #pragma clang loop id(j)
+    for (j = 0; j < _PB_NJ; j++)
+	C[i][j] *= beta;
     for (k = 0; k < _PB_NK; k++) {
-    //        #pragma clang loop id(k)
        for (j = 0; j < _PB_NJ; j++)
-	        C[i][j] += alpha * A[i][k] * B[k][j];
+	  C[i][j] += alpha * A[i][k] * B[k][j];
     }
   }
-#endif
-
-
-//#pragma endscop
+#pragma endscop
 
 }
 

@@ -1,5 +1,0 @@
-Experiment 377
-Function kernel_gemm:
-  #pragma clang loop(loop3,loop4,loop5) interchange permutation(loop4,loop5,loop3) permuted_ids(loop470,loop471,loop472)
-  #pragma clang loop(loop470,loop471,loop472) tile sizes(1024,64,16) floor_ids(loop811,loop801,loop775) tile_ids(loop812,loop802,loop776)
-Execution completed in 0:00:01.724010
