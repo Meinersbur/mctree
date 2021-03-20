@@ -6,7 +6,7 @@ BASENAME=`basename "${SCRIPTPATH}"`
 ROOTPATH=`realpath --no-symlinks "${SCRIPTPATH}/../.."`
 
 if [[ -z "${CLANG_PREFIX}" ]]; then
-  echo "CLANG_PREFIX envirnment variable not set"
+  echo "CLANG_PREFIX environment variable not set"
   exit 1
 fi
 
