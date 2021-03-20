@@ -59,7 +59,7 @@ void print_array(int n,
 
 /* Main computational kernel. The whole function will be timed,
    including the call and return. */
-static
+static __attribute__((noinline))
 void kernel_syr2k(int n, int m,
 		  DATA_TYPE alpha,
 		  DATA_TYPE beta,
