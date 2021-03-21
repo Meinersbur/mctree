@@ -141,6 +141,66 @@ void ljPrint(FILE* file, BasePotential* pot)
    fprintf(file, "  Sigma            : "FMT1" Angstroms\n", ljPot->sigma);
 }
 
+__attribute__((noinline))
+static void ljForce_kernel(
+                int nLocalBoxes, int nMaxAtoms, int nMaxNbrBoxes, 
+                int NumNeighborsPerBox[static const restrict nLocalBoxes], int nbrBoxesList[static const restrict nLocalBoxes][27], 
+                real3* r, real_t* U, int* gid, real3* f, int* nAtoms,
+                real_t rCut2, real_t s6, real_t eShift, real_t ePot, real_t epsilon) {
+
+   for (int iBox=0; iBox<nLocalBoxes; iBox++) {
+      int nIBox = nAtoms[iBox];
+
+      int nNbrBoxes = NumNeighborsPerBox[iBox];
+      int (*nbrBoxes)[27] = &nbrBoxesList[iBox];
+
+      for (int jTmp=0; jTmp<nMaxNbrBoxes; jTmp++) {
+         int jBox = (*nbrBoxes)[jTmp];
+         int nJBox = nAtoms[jBox];
+         
+         for (int iOff=iBox*MAXATOMS,ii=0; ii<nMaxAtoms; ii++,iOff++) {
+            int iId = gid[iOff];
+
+            for (int jOff=MAXATOMS*jBox,ij=0; ij<nMaxAtoms; ij++,jOff++) {
+               if (jTmp >= nNbrBoxes) continue;
+               if (iOff >= nIBox) continue;
+               if (jOff >= nJBox) continue;  
+
+               real_t dr0, dr1, dr2;
+               int jId = gid[jOff];  
+
+               if (jBox < nLocalBoxes && jId <= iId) continue; 
+               real_t r2 = 0.0;
+                  dr0 = r[iOff][0]-r[jOff][0];
+                  r2+=dr0*dr0;
+                  dr1 = r[iOff][1]-r[jOff][1];
+                  r2+=dr1*dr1;
+                  dr2 = r[iOff][2]-r[jOff][2];
+                  r2+=dr2*dr2;
+
+               if (r2 > rCut2) continue;
+
+               r2 = 1.0/r2;
+               real_t r6 = s6 * (r2*r2*r2);
+               real_t eLocal = r6 * (r6 - 1.0) - eShift;
+               U[iOff] += 0.5*eLocal;
+               U[jOff] += 0.5*eLocal;
+
+               ePot += (jBox < nLocalBoxes) ? eLocal : 0.5 * eLocal;
+
+               real_t fr = - 4.0*epsilon*r6*r2*(12.0*r6 - 6.0);
+                  f[iOff][0] -= dr0*fr;
+                  f[jOff][0] += dr0*fr;
+                  f[iOff][1] -= dr1*fr;
+                  f[jOff][1] += dr1*fr;
+                  f[iOff][2] -= dr2*fr;
+                  f[jOff][2] += dr2*fr;
+            } 
+         } 
+      } 
+   } 
+}
+
 int ljForce(SimFlat* s)
 {
    LjPotential* pot = (LjPotential *) s->pot;
@@ -164,6 +224,27 @@ int ljForce(SimFlat* s)
    real_t rCut6 = s6 / (rCut2*rCut2*rCut2);
    real_t eShift = POT_SHIFT * rCut6 * (rCut6 - 1.0);
 
+#if 1
+   int nLocalBoxes = s->boxes->nLocalBoxes;
+   int nMaxAtoms = 0;
+   int nMaxNbrBoxes = 0;
+   int NumNeighborsPerBox[nLocalBoxes];
+   int nbrBoxesList[nLocalBoxes][27];
+   for (int iBox=0; iBox < nLocalBoxes; iBox++) {
+        int nAtoms = s->boxes->nAtoms[iBox];
+        if (nMaxAtoms < nAtoms)
+                nMaxAtoms = nAtoms;
+        int nNbrBoxes = getNeighborBoxes(s->boxes, iBox, nbrBoxesList[iBox]);
+        if (nMaxNbrBoxes < nNbrBoxes)
+                nMaxNbrBoxes = nNbrBoxes;
+        NumNeighborsPerBox[iBox] = nNbrBoxes;
+   }
+   ljForce_kernel(
+        nLocalBoxes, nMaxAtoms, nMaxNbrBoxes,
+        NumNeighborsPerBox, nbrBoxesList,
+        s->atoms->r, s->atoms->U, s->atoms->gid, s->atoms->f, s->boxes->nAtoms,
+        rCut2, s6, eShift, ePot, epsilon);
+#else
    int nbrBoxes[27];
    // loop over local boxes
    for (int iBox=0; iBox<s->boxes->nLocalBoxes; iBox++)
@@ -227,6 +308,7 @@ int ljForce(SimFlat* s)
          } // loop over atoms in iBox
       } // loop over neighbor boxes
    } // loop over local boxes in system
+#endif
 
    ePot = ePot*4.0*epsilon;
    s->ePotential = ePot;
