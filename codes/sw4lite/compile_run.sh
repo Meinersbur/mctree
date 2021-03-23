@@ -13,11 +13,12 @@ fi
 CFLAGS=(-I"${CLANG_PREFIX}/projects/openmp/runtime/src" -I"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" -L"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
   -mllvm -polly-position=early -O3 -march=native \
   -I"/usr/include/x86_64-linux-gnu/mpich" -lmpich -llapack -lm \
-  -I"${SCRIPTPATH}" -DSW4_CROUTINES -DNDEBUG -mllvm -polly -mllvm -polly-position=early -mllvm -polly-only-func=ljForce_kernel -mllvm -polly-allow-nonaffine -mllvm -polly-process-unprofitable -mllvm -polly-allow-nonaffine-branches -mllvm -polly-print-instructions -mllvm -polly-use-llvm-names)
+  -I"${SCRIPTPATH}" -DSW4_CROUTINES -DDEBUG -mllvm -polly -mllvm -polly-position=early -mllvm -polly-only-func=rhs4sg_rev_kernel  -mllvm -polly-process-unprofitable -mllvm -polly-allow-nonaffine-branches -mllvm -polly-print-instructions -mllvm -polly-use-llvm-names -mllvm -polly-process-unprofitable -mllvm -debug-only=polly-detect,polly-scops -mllvm -polly-ignore-aliasing -flegacy-pass-manager)
 
-#"${CLANG_PREFIX}/bin/clang++" ${CFLAGS[*]} -c *.C
-rm -f EW.o
+"${CLANG_PREFIX}/bin/clang++" ${CFLAGS[*]} -c *.C
+rm -f rhs4sg_rev.o
 
-"${CLANG_PREFIX}/bin/clang++" ${CFLAGS[*]}  EW.C *.o  -o "${BASENAME}" \
+echo ${CFLAGS[*]} `pwd`/rhs4sg_rev.C -o "${BASENAME}"
+"${CLANG_PREFIX}/bin/clang++" ${CFLAGS[*]}  rhs4sg_rev.C *.o  -o "${BASENAME}"
 
 "${SCRIPTPATH}/${BASENAME}" LOH.1-h100.in
