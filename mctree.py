@@ -705,7 +705,7 @@ def extract_loopnests(tempdir, ccargs, execargs):
     root = read_json(files=[loopnestfile])
 
     print("Time the output...")
-    p = invoke.diag(exefile, timeout=execargs.timeout, 
+    p = invoke.diag(exefile, *execargs.args, timeout=execargs.timeout,
         appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path}, cwd=extractloopnest, onerror=invoke.Invoke.EXCEPTION)
     root.duration = p.walltime
     root.exppath = extractloopnest
@@ -785,7 +785,7 @@ def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execar
         return
 
     try:
-        p = invoke.diag(exefile, cwd=expdir, onerror=invoke.Invoke.EXCEPTION, timeout=execargs.timeout,
+        p = invoke.diag(exefile, *execargs.args, cwd=expdir, onerror=invoke.Invoke.EXCEPTION, timeout=execargs.timeout,
                         std_prefixed=expdir / 'exec.txt', appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path})
     except subprocess.TimeoutExpired:
         # Assume failure
@@ -902,6 +902,8 @@ class PriorityQueue:
 def autotune(parser, args):
     if parser:
         add_boolean_argument(parser, 'keep')
+        parser.add_argument('--exec-arg', action='append')
+        parser.add_argument('--exec-args', action='append')
         parser.add_argument('--ld-library-path', action='append')
         parser.add_argument('--outdir')
         parser.add_argument('--timeout', type=float,
@@ -910,15 +912,17 @@ def autotune(parser, args):
     if args:
         ccargs = parse_cc_cmdline(args.ccline)
 
-        execargs = argparse.Namespace()
+        execopts = argparse.Namespace()
 
-        execargs.ld_library_path = None
+        execopts.ld_library_path = None
         if args.ld_library_path != None:
-            execargs.ld_library_path = ':'.join(args.ld_library_path)
+            execopts.ld_library_path = ':'.join(args.ld_library_path)
 
-        execargs.timeout = None
+        execopts.timeout = None
         if args.timeout != None:
-            execargs.timeout = datetime.timedelta(seconds=args.timeout)
+            execopts.timeout = datetime.timedelta(seconds=args.timeout)
+
+        execopts.args = shcombine(arg=args.exec_arg,args=args.exec_args)
 
         outdir = mkpath(args.outdir)
         maxdepth = 0
@@ -937,7 +941,7 @@ def autotune(parser, args):
             csvlog = csvfile.open('w+')
             newbestlog = newbestcsvfile.open('w+')
 
-            root = extract_loopnests(d, ccargs=ccargs, execargs=execargs)
+            root = extract_loopnests(d, ccargs=ccargs, execargs=execopts)
             print("Baseline is")
             print(root)
             print("")
@@ -956,7 +960,7 @@ def autotune(parser, args):
 
                 if item.duration == None:
                     num_experiments += 1
-                    run_experiment(d, item, ccargs=ccargs, execargs=execargs, 
+                    run_experiment(d, item, ccargs=ccargs, execargs=execopts, 
                         writedot=num_experiments < 30, 
                         dotfilter=None,
                         dotexpandfilter=lambda n: n in closed,

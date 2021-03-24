@@ -46,9 +46,10 @@ def shcombine(arg=None,args=None):
 
   # args needing de-escaping
   if args is not None:
-    result += [arg for arg in shsplit(argline) for argline in args]
+    result += [arg for argline in args for arg in shsplit(argline)]
 
   return result
+
 
 # from https://stackoverflow.com/questions/1714027/version-number-comparison-in-python
 def version_cmp(v1, v2):
