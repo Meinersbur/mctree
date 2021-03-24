@@ -11,7 +11,7 @@ if [[ -z "${CLANG_PREFIX}" ]]; then
 fi  
 
 "${CLANG_PREFIX}/bin/clang" -I"${CLANG_PREFIX}/projects/openmp/runtime/src" -I"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" -L"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
-  -mllvm -polly-position=early -O3 -march=native \
+  -flegacy-pass-manager -mllvm -polly-position=early -O3 -march=native \
   *.c -o "${BASENAME}" \
   -I"${SCRIPTPATH}" -DDOUBLE -DNDEBUG -lm -mllvm -polly -mllvm -polly-position=early -mllvm -debug-only=polly-detect,polly-scops,polly-isl -mllvm -polly-only-func=ljForce_kernel -mllvm -polly-allow-nonaffine -g -mllvm -polly-process-unprofitable -mllvm -polly-allow-nonaffine-branches -mllvm -polly-print-instructions -mllvm -polly-use-llvm-names
 

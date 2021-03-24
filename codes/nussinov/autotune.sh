@@ -12,7 +12,7 @@ fi
 
 (cd "${SCRIPTPATH}" && python3 "${ROOTPATH}/mctree.py" autotune --ld-library-path="${CLANG_PREFIX}/lib:${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
   "${CLANG_PREFIX}/bin/clang" -I"${CLANG_PREFIX}/projects/openmp/runtime/src" -I"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" -L"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
-  -mllvm -polly-position=early -O3 -march=native \
+  -flegacy-pass-manager -mllvm -polly-position=early -O3 -march=native \
   *.c -o "${BASENAME}" \
   -I"${SCRIPTPATH}" \
   -DLARGE_DATASET -mllvm -polly-only-func=kernel_nussinov \
