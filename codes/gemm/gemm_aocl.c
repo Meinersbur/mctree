@@ -11,7 +11,8 @@
 /* Include benchmark-specific header. */
 #include "gemm.h"
 
-#include "mkl.h"
+#include "cblas.h"
+
 
 /* Array initialization. */
 static
@@ -58,6 +59,7 @@ void print_array(int ni, int nj,
 }
 
 
+
 /* Main computational kernel. The whole function will be timed,
    including the call and return. */
 static
@@ -78,7 +80,7 @@ void kernel_gemm(int ni, int nj, int nk,
 //B is NKxNJ
 //C is NIxNJ
 
-  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, /*m*/ni, /*n*/nj, /*k*/nk, alpha, A, /*k*/nk, B, /*n*/nj, beta, C, /*n*/nj);
+  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, /*m*/ni, /*n*/nj, /*k*/nk, alpha, (double*)A, /*k*/nk, (double*)B, /*n*/nj, beta, (double*)C, /*n*/nj);
 }
 
 
