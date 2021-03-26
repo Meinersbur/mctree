@@ -559,24 +559,24 @@ class Unrolling:
 
 class ArrayPacking:
     @staticmethod
-    def get_factory(factors, arrays):
+    def get_factory(arrays):
         def factory(loop: Loop):
             return ArrayPacking(loop,arrays)
         return factory
 
     def __init__(self, loop: Loop, arrays):
         self.loop = loop
-        self.arrays = arrays
+        self.arrays = list(arrays)
         self.num_children = mcount(self.selector())
 
     def selector(self):
         loop = self.loop
 
         def make_array_packing(loopcounter, idx: int):
-            assert 0 <= ids < len(self.arrays)
-            packed_loop = Loop.createLoop(name=f'packed{loopcounter.nextId()}')
+            assert 0 <= idx < len(self.arrays)
+            packed_loop = Loop.createAnonLoop()
             packed_loop.subloops = self.loop.subloops
-            pragma = f"#pragma clang loop({self.loop.name}) pack arrays({self.arrays[i]})"
+            pragma = f"#pragma clang loop({self.loop.name}) pack array({self.arrays[idx]})"
             return packed_loop, [pragma]         
 
         yield len(self.arrays), make_array_packing
@@ -942,7 +942,6 @@ def autotune(parser, args):
         parser.add_argument('ccline', nargs=argparse.REMAINDER)
     if args:
         ccargs = parse_cc_cmdline(args.ccline)
-
         execopts = argparse.Namespace()
 
         execopts.ld_library_path = None
@@ -1051,7 +1050,7 @@ def main(argv: str) -> int:
     add_boolean_argument(parser, "--unrolling", default=True)
     add_boolean_argument(parser, "--unrolling-full", default=True)
     parser.add_argument('--unrolling-factors')
-    parser.add_argument('--packing-array',action='append')
+    parser.add_argument('--packing-arrays',action='append')
 
     subparsers = parser.add_subparsers(dest='subcommand')
     for cmd, func in commands.items():
@@ -1076,10 +1075,10 @@ def main(argv: str) -> int:
             factors = [int(s) for s in args.unrolling_factors.split(',')]
         transformers.append(Unrolling.get_factory(factors,args.unrolling_full))
     pack_arrays = set()
-    if args.pack_array:
-            pack_arrays.add(arr for arrlist in args.pack_array for arr in arrlist.split(','))
+    if args.packing_arrays:
+            pack_arrays = set(arr for arrlist in args.packing_arrays for arr in arrlist.split(','))
     if pack_arrays:
-            transformers.append();
+            transformers.append(ArrayPacking.get_factory(pack_arrays))
 
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:
