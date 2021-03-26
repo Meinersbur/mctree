@@ -17,4 +17,4 @@ fi
    -DLARGE_DATASET \
 )
 
-LD_LIBRARY_PATH="${SCRIPTPATH}/amd-blis/lib:${CLANG_PREFIX}/lib:${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" time "${SCRIPTPATH}/gemm_aocl-mt"
+LD_LIBRARY_PATH="${SCRIPTPATH}/amd-blis/lib:${CLANG_PREFIX}/lib:${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src:${LD_LIBRARY_PATH}" time "${SCRIPTPATH}/gemm_aocl-mt"

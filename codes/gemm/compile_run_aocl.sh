@@ -17,4 +17,4 @@ fi
    -DLARGE_DATASET \
 )
 
-LD_LIBRARY_PATH="${SCRIPTPATH}/amd-blis/lib" time "${SCRIPTPATH}/gemm_aocl"
+LD_LIBRARY_PATH="${SCRIPTPATH}/amd-blis/lib:${LD_LIBRARY_PATH}" time "${SCRIPTPATH}/gemm_aocl"
