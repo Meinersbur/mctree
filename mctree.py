@@ -557,6 +557,37 @@ class Unrolling:
         return mcall(self.selector(), loopcounter, idx)
 
 
+class ArrayPacking:
+    @staticmethod
+    def get_factory(factors, arrays):
+        def factory(loop: Loop):
+            return ArrayPacking(loop,arrays)
+        return factory
+
+    def __init__(self, loop: Loop, arrays):
+        self.loop = loop
+        self.arrays = arrays
+        self.num_children = mcount(self.selector())
+
+    def selector(self):
+        loop = self.loop
+
+        def make_array_packing(loopcounter, idx: int):
+            assert 0 <= ids < len(self.arrays)
+            packed_loop = Loop.createLoop(name=f'packed{loopcounter.nextId()}')
+            packed_loop.subloops = self.loop.subloops
+            pragma = f"#pragma clang loop({self.loop.name}) pack arrays({self.arrays[i]})"
+            return packed_loop, [pragma]         
+
+        yield len(self.arrays), make_array_packing
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
+
+
 
 
 def as_dot(baseexperiment: Experiment, max_depth=None, filter=None, decendfilter=None):
@@ -1020,6 +1051,7 @@ def main(argv: str) -> int:
     add_boolean_argument(parser, "--unrolling", default=True)
     add_boolean_argument(parser, "--unrolling-full", default=True)
     parser.add_argument('--unrolling-factors')
+    parser.add_argument('--packing-array',action='append')
 
     subparsers = parser.add_subparsers(dest='subcommand')
     for cmd, func in commands.items():
@@ -1043,6 +1075,11 @@ def main(argv: str) -> int:
         if args.unrolling_factors != None:
             factors = [int(s) for s in args.unrolling_factors.split(',')]
         transformers.append(Unrolling.get_factory(factors,args.unrolling_full))
+    pack_arrays = set()
+    if args.pack_array:
+            pack_arrays.add(arr for arrlist in args.pack_array for arr in arrlist.split(','))
+    if pack_arrays:
+            transformers.append();
 
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:
