@@ -707,6 +707,8 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
     cmdline += ['-flegacy-pass-manager', '-ferror-limit=1',
                 '-mllvm', '-polly', '-mllvm', '-polly-process-unprofitable',
                 '-mllvm', '-polly-reschedule=0', '-mllvm', '-polly-pattern-matching-based-opts=0']
+    if ccargs.polybench_time:
+        cmdline += ['-DPOLYBENCH_TIME=1'] 
     if debuginfo:
         # FIXME: loopnests.json overwritten if multiple files passed to clang
         cmdline += ['-g', '-gcolumn-info']
@@ -721,7 +723,24 @@ def make_ccline(ccargs, ccfiles=None, outfile=None, debuginfo=None, extraflags=[
     return cmdline
 
 
-def extract_loopnests(tempdir, ccargs, execargs):
+
+def run_exec(experiment,cwd,exefile,execopts):
+    print("Time the output...")
+    polybench_time = execopts.polybench_time
+
+    p = invoke.diag(exefile, *execopts.args, timeout=execopts.timeout, std_prefixed=cwd / 'exec.txt',
+                appendenv={'LD_LIBRARY_PATH': execopts.ld_library_path}, cwd=cwd, onerror=invoke.Invoke.EXCEPTION,return_stdout=polybench_time)
+
+    if polybench_time:
+        experiment.duration = datetime.timedelta(seconds=float(p.stdout.rstrip().splitlines()[-1]))
+        print(f"Execution completed in {p.walltime}; polybench measurement: {experiment.duration}")
+    else:
+        experiment.duration = p.walltime
+        print(f"Execution completed in {p.walltime}")
+    experiment.exppath = cwd
+
+
+def extract_loopnests(tempdir, ccargs, execopts):
     print("Extract loop nests...")
 
     extractloopnest = tempdir / 'base'
@@ -734,19 +753,16 @@ def extract_loopnests(tempdir, ccargs, execargs):
 
     loopnestfile = extractloopnest / 'loopnests.json'
     root = read_json(files=[loopnestfile])
-
-    print("Time the output...")
-    p = invoke.diag(exefile, *execargs.args, timeout=execargs.timeout,
-        appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path}, cwd=extractloopnest, onerror=invoke.Invoke.EXCEPTION)
-    root.duration = p.walltime
-    root.exppath = extractloopnest
     root.expnumber = 0
     root.depth = 1
+
+    run_exec(experiment=root,cwd=extractloopnest,exefile=exefile,execopts=execopts)
+
     return root
 
 
 expnumber = 1
-def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execargs, writedot: bool, dotfilter, dotexpandfilter, root: Experiment):
+def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execopts, writedot: bool, dotfilter, dotexpandfilter, root: Experiment):
     global expnumber
     expdir = tempdir / f"experiment{expnumber}"
     experiment.expnumber = expnumber
@@ -816,17 +832,16 @@ def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execar
         return
 
     try:
-        p = invoke.diag(exefile, *execargs.args, cwd=expdir, onerror=invoke.Invoke.EXCEPTION, timeout=execargs.timeout,
-                        std_prefixed=expdir / 'exec.txt', appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path})
+        run_exec(experiment=experiment,cwd=expdir,exefile=exefile,execopts=execopts)
+        #p = invoke.diag(exefile, *execargs.args, cwd=expdir, onerror=invoke.Invoke.EXCEPTION, timeout=execargs.timeout,
+        #                std_prefixed=expdir / 'exec.txt', appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path})
     except subprocess.TimeoutExpired:
         # Assume failure
         experiment.duration = math.inf
         return
-    print(f"Execution completed in {p.walltime}")
-    experiment.duration = p.walltime
 
     with logfile.open('a') as f:
-        f.write(f"Execution completed in {p.walltime}\n")
+        f.write(f"Measured time is {experiment.duration}\n")
 
     if writedot:
         with dotfile.open('w+') as f:
@@ -935,6 +950,7 @@ def autotune(parser, args):
         add_boolean_argument(parser, 'keep')
         parser.add_argument('--exec-arg', action='append')
         parser.add_argument('--exec-args', action='append')
+        add_boolean_argument(parser, 'polybench-time')
         parser.add_argument('--ld-library-path', action='append')
         parser.add_argument('--outdir')
         parser.add_argument('--timeout', type=float,
@@ -942,6 +958,8 @@ def autotune(parser, args):
         parser.add_argument('ccline', nargs=argparse.REMAINDER)
     if args:
         ccargs = parse_cc_cmdline(args.ccline)
+        ccargs.polybench_time = args.polybench_time
+
         execopts = argparse.Namespace()
 
         execopts.ld_library_path = None
@@ -951,6 +969,7 @@ def autotune(parser, args):
         execopts.timeout = None
         if args.timeout != None:
             execopts.timeout = datetime.timedelta(seconds=args.timeout)
+        execopts.polybench_time = args.polybench_time
 
         execopts.args = shcombine(arg=args.exec_arg,args=args.exec_args)
 
@@ -971,7 +990,7 @@ def autotune(parser, args):
             csvlog = csvfile.open('w+')
             newbestlog = newbestcsvfile.open('w+')
 
-            root = extract_loopnests(d, ccargs=ccargs, execargs=execopts)
+            root = extract_loopnests(d, ccargs=ccargs, execopts=execopts)
             print("Baseline is")
             print(root)
             print("")
@@ -990,7 +1009,7 @@ def autotune(parser, args):
 
                 if item.duration == None:
                     num_experiments += 1
-                    run_experiment(d, item, ccargs=ccargs, execargs=execopts, 
+                    run_experiment(d, item, ccargs=ccargs, execopts=execopts, 
                         writedot=num_experiments < 30, 
                         dotfilter=None,
                         dotexpandfilter=lambda n: n in closed,

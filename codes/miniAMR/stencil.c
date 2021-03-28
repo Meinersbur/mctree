@@ -35,6 +35,9 @@
 #include "block.h"
 #include "comm.h"
 #include "proto.h"
+
+#include "polybench.h"
+
 void stencil_calc(int, int);
 void stencil_0(int);
 void stencil_x(int);
@@ -93,6 +96,8 @@ void stencil7_calc_all(int num_indices, int x_size, int y_size, int z_size, doub
 
 
 //#pragma clang loop(in) parallelize_thread
+//#pragma clang loop(i,j,k) tile sizes(8,16,16)
+
 
 //#pragma clang loop id(in)
   for (int in = 0; in < num_indices; in++)
@@ -112,31 +117,51 @@ void stencil7_calc_all(int num_indices, int x_size, int y_size, int z_size, doub
 }
 
 
-
 static void stencil7_calc(int var, int num_indices, int x_size, int y_size, int z_size) {
+  char *mem = malloc(2ll*num_indices*x_size*y_size*z_size*sizeof(double));
   typedef double (block3D_t)[y_size][z_size];
-  double allwork[num_indices][x_size][y_size][z_size];
-  double allarray[num_indices][x_size][y_size][z_size];
+  double (*allwork)[x_size][y_size][z_size] = (void*)mem;
+  double (*allarray)[x_size][y_size][z_size] = (void*)(mem+num_indices*x_size*y_size*z_size*sizeof(double));
+  double data[x_size][y_size][z_size];
 
   // copy-in
   for (int in = 0; in < num_indices; in++) {
     block* bp = &blocks[sorted_list[in].n];
-    block3D_t* array = (block3D_t*)&bp->array[var * x_size * y_size * z_size];
-    block3D_t* work = allwork[in];
+    void* array = &bp->array[var * x_size * y_size * z_size];
+    void* work = &allwork[in];
 
-    memcpy(work, array, sizeof(double)* x_size * y_size * z_size);
+    memcpy(work, array, sizeof(double) * x_size * y_size * z_size);
   }
 
+#ifdef POLYBENCH_TIME
+  printf("var=%d num_indices=%d z_size=%d z_size=%d z_size=%d\n", var, num_indices, x_size, y_size, z_size);
+  static int warmup = 0;
+  if (warmup >= 3) {
+        polybench_start_instruments
+  }
+#endif
+
   stencil7_calc_all(num_indices, x_size, y_size, z_size, allarray, allwork);
+
+#ifdef POLYBENCH_TIME
+  if (warmup >= 3) {
+        polybench_stop_instruments
+        polybench_print_instruments
+        exit(0);
+  }
+  warmup+=1;
+#endif
 
   // copy back
   for (int in = 0; in < num_indices; in++) {
     block* bp = &blocks[sorted_list[in].n];
-    block3D_t* array = (block3D_t*)&bp->array[var * x_size * y_size * z_size];
-    block3D_t* work = allwork[in];
+    void* array = &bp->array[var * x_size * y_size * z_size];
+    void* result = allarray[in];
 
-    memcpy(array, &allarray[in], sizeof(double)* x_size * y_size * z_size);
+    memcpy(array, result, sizeof(double) * x_size * y_size * z_size);
   }
+
+  free(mem);
 }
 
 
