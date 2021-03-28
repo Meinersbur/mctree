@@ -11,7 +11,7 @@ if [[ -z "${CLANG_PREFIX}" ]]; then
 fi
 
 
-(cd "${SCRIPTPATH}" && python3 "${ROOTPATH}/mctree.py" --packing-arrays=A,B,C autotune \
+(cd "${SCRIPTPATH}" && python3 "${ROOTPATH}/mctree.py" --packing-arrays=A,B,C autotune --polybench-time \
   --ld-library-path="${CLANG_PREFIX}/lib:${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
   "${CLANG_PREFIX}/bin/clang" -I"${CLANG_PREFIX}/projects/openmp/runtime/src" -I"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" -L"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
   -flegacy-pass-manager -mllvm -polly-position=early -O3 -march=native \
