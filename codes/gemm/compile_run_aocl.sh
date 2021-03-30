@@ -14,7 +14,7 @@ fi
    -flegacy-pass-manager -O3 -march=native \
    polybench.c gemm_aocl.c -o "${SCRIPTPATH}/gemm_aocl" \
    -lblis -I"${SCRIPTPATH}" \
-   -DLARGE_DATASET \
+   -DLARGE_DATASET -UBLIS_ENABLE_OPENMP \
 )
 
 LD_LIBRARY_PATH="${SCRIPTPATH}/amd-blis/lib:${LD_LIBRARY_PATH}" time "${SCRIPTPATH}/gemm_aocl"
