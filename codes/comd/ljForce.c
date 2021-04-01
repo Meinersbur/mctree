@@ -72,6 +72,8 @@
 #include "memUtils.h"
 #include "CoMDTypes.h"
 
+#include "polybench.h"
+
 #define POT_SHIFT 1.0
 
 /// Derived struct for a Lennard Jones potential.
@@ -239,11 +241,30 @@ int ljForce(SimFlat* s)
                 nMaxNbrBoxes = nNbrBoxes;
         NumNeighborsPerBox[iBox] = nNbrBoxes;
    }
+   
+#ifdef POLYBENCH_TIME
+  printf("nLocalBoxes=%d nMaxAtoms=%d nMaxNbrBoxes=%d MAXATOMS=%d\n", nLocalBoxes, nMaxAtoms, nMaxNbrBoxes, MAXATOMS);
+  static int warmup = 0;
+  if (warmup >= 3) {
+        polybench_start_instruments
+  }
+#endif
+   
    ljForce_kernel(
         nLocalBoxes, nMaxAtoms, nMaxNbrBoxes,
         NumNeighborsPerBox, nbrBoxesList,
         s->atoms->r, s->atoms->U, s->atoms->gid, s->atoms->f, s->boxes->nAtoms,
         rCut2, s6, eShift, ePot, epsilon);
+        
+#ifdef POLYBENCH_TIME
+  if (warmup >= 3) {
+        polybench_stop_instruments
+        polybench_print_instruments
+        exit(0);
+  }
+  warmup+=1;
+#endif
+        
 #else
    int nbrBoxes[27];
    // loop over local boxes
