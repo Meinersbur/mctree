@@ -36,6 +36,10 @@
 //#include <iostream>
 //using namespace std;
 
+#ifdef POLYBENCH_TIME
+#include "polybench.h"
+#endif
+
 #define long long long
 
 extern "C" {
@@ -635,6 +639,13 @@ void rhs4sg_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int k
        // std::cerr << "klast-kfirst+1 = " << klast-kfirst+1 << "\n";
         //assert(nk == klast-kfirst+1);
 
+#ifdef POLYBENCH_TIME
+  printf("ifirst=%d jfirst=%d kfirst=%d ni=%d J=%d K=%d\n", ifirst, jfirst, kfirst, ni, J, K);
+  static int warmup = 0;
+  if (warmup >= 3) {
+        polybench_start_instruments
+  }
+#endif
 
         rhs4sg_rev_kernel(ifirst, jfirst, kfirst, 
                 ni, J, K,
@@ -644,6 +655,16 @@ void rhs4sg_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int k
                 &a_u[base3], &a_mu[base], &a_lambda[base],
                 &a_strx[-ifirst0], &a_stry[-jfirst0], &a_strz[-kfirst0]
         );
+
+#ifdef POLYBENCH_TIME
+  if (warmup >= 3) {
+        polybench_stop_instruments
+        polybench_print_instruments
+        exit(0);
+  }
+  warmup+=1;
+#endif
+
 #else
    const float_sw4 a1   = 0;
    const float_sw4 i6   = 1.0/6;
