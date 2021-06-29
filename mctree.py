@@ -57,21 +57,27 @@ class Loop:
     def createLoop(cls, loopcounter=None, name: str = None):
         if not name:
             name = f'loop{loopcounter.nextId()}'
-        return cls(isroot=False, istransformable=True, name=name)
+        return cls(isroot=False, isstmt=False,isloop=True, istransformable=True, name=name)
+
+    @classmethod
+    def createStmt(cls):
+        return cls(isroot=False, isstmt=True,isloop=False,istransformable=True,name=None)
 
     @classmethod
     def createAnonLoop(cls):
-        return cls(isroot=False, istransformable=False, name=None)
+        return cls(isroot=False, isstmt=False,isloop=True, istransformable=False, name=None)
 
     @classmethod
     def createRoot(cls):
-        return cls(isroot=True, istransformable=False, name=None)
+        return cls(isroot=True,isstmt=False,isloop=False, istransformable=False, name=None)
 
-    def __init__(self, isroot: bool, istransformable: bool, name: str):
-        if isroot or not istransformable:
+    def __init__(self, isroot: bool, isstmt: bool, isloop: bool, istransformable: bool, name: str):
+        if isroot or isstmt or not istransformable:
             assert name == None
 
         self.isroot = isroot
+        self.isstmt = isstmt
+        self.isloop = isloop
         self.transformable = istransformable
 
         self.name = name
@@ -81,11 +87,9 @@ class Loop:
         self.line = None
         self.column = None
         self.function = None
-        self.entry = None
-        self.exit = None
 
     def selector(self):
-        if not self.isroot and self.transformable:
+        if self.isloop and self.transformable:
             looptransformers = (t(self) for t in transformers)
             for transformer in looptransformers:
                 yield transformer.get_num_children(), transformer.get_child
@@ -93,9 +97,11 @@ class Loop:
         def make_replace_loop_closure(i,subloop):
             def replace_loop(loopcounter, idx: int):
                 newsubloop, pragmas = subloop.get_child(loopcounter, idx)
+                assert isinstance(newsubloop,list), "Please return a list of replacement loops"
                 newloop = self.clone()
-                newloop.subloops[i] = newsubloop
-                return newloop, pragmas
+                newloop.subloops = newloop.subloops[:i] + newsubloop + newloop.subloops[i+1:]
+                #newloop.subloops[i] = newsubloop
+                return [newloop], pragmas
             return replace_loop
 
         for i, subloop in enumerate(self.subloops):
@@ -119,6 +125,8 @@ class Loop:
                 break
             if len(lastsubloops) != 1:
                 break
+            if not lastsubloops[0].isloop:
+                break
             if not lastsubloops[0].transformable:
                 break
 
@@ -135,22 +143,27 @@ class Loop:
         self.subloops.append(newloop)
         return newloop
 
+    def new_substmt(self):
+        newstmt = Loop.createStmt()
+        self.subloops.append(newstmt)
+        return newstmt
+
     def add_subloop(self, subloop):
         self.subloops.append(subloop)
         return subloop
 
     def clone(self):
         if self.isroot:
-            result = Loop(isroot=True, istransformable=False, name=None)
-        else:
-            result = Loop(isroot=False, istransformable=self.transformable, name=self.name)
+            result = Loop(isroot=True , isstmt=False, isloop=False,  istransformable=False, name=None)
+        elif self.isloop:
+            result = Loop(isroot=False, isstmt=False, isloop=True,istransformable=self.transformable, name=self.name)
+        elif self.isstmt:
+            result = Loop(isroot=False , isstmt=True, isloop=False,  istransformable=False, name=None)
         result.subloops = self.subloops.copy()
         result.filename = self.filename
         result.line = self.line
         result.column = self.column
         result.function = self.function
-        result.entry = self.entry
-        result.exit = self.exit
         return result
 
     def __str__(self) -> str:
@@ -159,20 +172,22 @@ class Loop:
     def to_lines(self, indent: int = 0):
         block = False
         subindent = indent
-        if not self.isroot:
-            block = len(self.subloops) > 1
+        if self.isroot:
+            pass
+        elif self.isloop:
+            block = len(self.subloops) != 1
             yield "    "*indent + f"#pragma clang loop id({self.name})"
             loc = ""
             if self.filename:
                 loc = f" /* {self.filename}:{self.line}:{self.column} */"
             yield "    "*indent + "for (...)" + (" {" if block else "") + loc
             subindent += 1
+        elif self.isstmt:
+            yield "    "*subindent + "stmt;"
 
         if self.subloops:
             for subloop in self.subloops:
                 yield from subloop.to_lines(indent=subindent)
-        else:
-            yield "    "*subindent + "code;"
 
         if block:
             yield "    "*indent + "}"
@@ -205,17 +220,27 @@ def gist(root, childids, oldloop, newloop):
 def json_to_loops(topmost, loopcounter):
     result = Loop.createRoot()
     for tm in topmost:
-        loop = Loop.createLoop(loopcounter)
-        loop.filename = mkpath(tm["path"])
-        loop.line = tm["line"]
-        loop.column = tm["column"]
-        loop.entry = tm["entry"]
-        loop.exit = tm["exit"]
-        loop.function = tm["function"]
-        loop.isperfectnest = tm.get('perfectnest')
-        sublooproot = json_to_loops(tm["subloops"], loopcounter)
-        loop.subloops = sublooproot.subloops
-        result.add_subloop(loop)
+        kind = tm['kind']
+        if kind == 'loop':
+            loop = Loop.createLoop(loopcounter)
+            loop.filename = mkpath(tm["path"])
+            loop.line = tm["line"]
+            loop.column = tm["column"]
+            loop.function = tm["function"]
+            loop.isperfectnest = tm.get('perfectnest')
+            sublooproot = json_to_loops(tm["children"], loopcounter)
+            loop.subloops = sublooproot.subloops
+            result.add_subloop(loop)
+        elif kind == 'stmt':
+            stmt = Loop.createStmt()
+            stmt.filename = mkpath(tm["path"])
+            stmt.line = tm["line"]
+            stmt.column = tm["column"]
+            stmt.function = tm["function"]
+            #stmt.isperfectnest = tm.get('perfectnest')
+            result.add_subloop(stmt)
+        else:
+            assert False, "unknown kind"
     return result
 
 
@@ -234,6 +259,7 @@ class LoopCounter:
 
 class LoopNestExperiment:
     def __init__(self, loopnest, pragmalist, loopcounter):
+        assert loopnest.isroot
         self.loopnest = loopnest
         self.pragmalist = pragmalist
         self.derived_from = None
@@ -254,7 +280,9 @@ class LoopNestExperiment:
     def get_child(self, idx: int):
         resetloopcounter = self.loopcounter.clone()
         loopnest, pragmalist = self.loopnest.get_child(resetloopcounter, idx)
-        result = LoopNestExperiment(loopnest, self.pragmalist + pragmalist, loopcounter=resetloopcounter)
+        assert len(loopnest)==1
+        assert loopnest[0].isroot
+        result = LoopNestExperiment(loopnest[0], self.pragmalist + pragmalist, loopcounter=resetloopcounter)
         result.derived_from = self
         return result
 
@@ -372,7 +400,7 @@ class Tiling:
         sizes = [str(s) for s in sizes]
         peelclause = " peel(rectangular)" if peel else ""
         pragma = f"#pragma clang loop({','.join(origloopids)}) tile sizes({','.join(sizes)}){peelclause} floor_ids({','.join(floorids)}) tile_ids({','.join(tileids)})"
-        return newloops[0], [pragma]
+        return [newloops[0]], [pragma]
 
     def selector(self):
         loopnest = self.loop.perfectnest()
@@ -418,7 +446,7 @@ class Threading:
         parallel_loop = Loop.createAnonLoop()
         parallel_loop.subloops = self.loop.subloops
         pragma = f"#pragma clang loop({self.loop.name}) parallelize_thread"
-        return parallel_loop, [pragma]
+        return [parallel_loop], [pragma]
 
 
 class Interchange:
@@ -479,7 +507,7 @@ class Interchange:
                 permids = [p.name for p in perm]
                 newpermids = [p.name for p in newperm]
                 pragma = f"#pragma clang loop({','.join(nestids)}) interchange permutation({','.join(permids)}) permuted_ids({','.join(newpermids)})"
-                return newperm[0], [pragma]
+                return [newperm[0]], [pragma]
             return make_child
 
         num_children = (n-1)
@@ -512,8 +540,7 @@ class Reversal:
         reversed_loop = Loop.createLoop(name=f'rev{loopcounter.nextId()}')
         reversed_loop.subloops = self.loop.subloops
         pragma = f'#pragma clang loop({self.loop.name}) reverse reversed_id({reversed_loop.name})'
-        return reversed_loop, [pragma]
-
+        return [reversed_loop], [pragma]
 
 
 class Unrolling:
@@ -535,16 +562,16 @@ class Unrolling:
         def make_full_unrolling(loopcounter, idx: int):
             assert idx == 0
             unrolled_loop = Loop.createAnonLoop()
-            unrolled_loop.subloops = self.loop.subloops
+            unrolled_loop.subloops = loop.subloops
             pragma = f"#pragma clang loop({self.loop.name}) unrolling full"
-            return unrolled_loop, [pragma]
+            return [unrolled_loop], [pragma]
 
         def make_partial_unrolling(loopcounter, idx: int):
             factor = self.factors[idx]
             unrolled_loop = Loop.createLoop(name=f'unroll{loopcounter.nextId()}')
-            unrolled_loop.subloops = self.loop.subloops
+            unrolled_loop.subloops = loop.subloops
             pragma = f"#pragma clang loop({self.loop.name}) unrolling factor({factor})"
-            return unrolled_loop, [pragma]                
+            return [unrolled_loop], [pragma]                
 
         if self.enable_full:
             yield 1, make_full_unrolling
@@ -577,7 +604,7 @@ class ArrayPacking:
             packed_loop = Loop.createAnonLoop()
             packed_loop.subloops = self.loop.subloops
             pragma = f"#pragma clang loop({self.loop.name}) pack array({self.arrays[idx]})"
-            return packed_loop, [pragma]         
+            return [packed_loop], [pragma]         
 
         yield len(self.arrays), make_array_packing
 
@@ -588,6 +615,39 @@ class ArrayPacking:
         return mcall(self.selector(), loopcounter, idx)
 
 
+class Fission:
+    @staticmethod
+    def get_factory():
+        def factory(loop):
+            return Fission(loop)
+        return factory
+
+    def __init__(self, loop):
+        self.loop = loop
+        self.num_children = mcount(self.selector())
+
+    def selector(self):
+        loop = self.loop
+        subcount = len(loop.subloops)
+
+        def make_fission(loopcounter,idx: int):
+            split_at = idx+1
+            assert 0 < split_at < subcount
+            head_loop = Loop.createLoop(name=f"head{loopcounter.nextId()}")
+            head_loop.subloops = loop.subloops[:split_at]
+            tail_loop = Loop.createLoop(name=f"tail{loopcounter.nextId()}")
+            tail_loop.subloops = loop.subloops[split_at:]
+            pragma = f"#pragma clang loop({loop.name}) fission split_at({idx})"
+            return [head_loop,tail_loop], [pragma]
+
+        yield subcount-1,make_fission
+
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
 
 
 def as_dot(baseexperiment: Experiment, max_depth=None, filter=None, decendfilter=None):
@@ -655,8 +715,10 @@ def example(parser, args):
     if args:
         loopcounter = LoopCounter()
         example = Loop.createRoot()
-        example.new_subloop(loopcounter)
-        example.new_subloop(loopcounter).new_subloop(loopcounter)
+        example.new_subloop(loopcounter).new_substmt()
+        outer = example.new_subloop(loopcounter)
+        outer.new_subloop(loopcounter)
+        outer.new_substmt()
 
         root = Experiment()
         root.nestexperiments.append(LoopNestExperiment(example, [], loopcounter))
@@ -671,10 +733,10 @@ def read_json(files):
     for fn in files:
         with mkpath(fn).open() as fo:
             data = json.load(fo)
-        loopnests = data["loopnests"]
+        loopnests = data["scops"]
         loopcounter = LoopCounter()
         for ln in loopnests:            
-            nestroot = json_to_loops(ln["topmost"], loopcounter)
+            nestroot = json_to_loops(ln["children"], loopcounter)
             exroot = LoopNestExperiment(nestroot, [], loopcounter=loopcounter)
             root.nestexperiments.append(exroot)
     return root
@@ -748,11 +810,12 @@ def extract_loopnests(tempdir, ccargs, execopts):
     exefile = extractloopnest / ccargs.o.name
 
     cmdline = make_ccline(ccargs, outfile=exefile, 
-        extraflags=['-mllvm', '-polly-output-loopnest=loopnests.json'], debuginfo=True)
+        extraflags=['-mllvm', '-polly-dump-loopnest'], debuginfo=True)
     invoke.diag(*cmdline, cwd=extractloopnest, onerror=invoke.Invoke.EXCEPTION)
 
-    loopnestfile = extractloopnest / 'loopnests.json'
-    root = read_json(files=[loopnestfile])
+    loopnestfiles = [extractloopnest /  f"{ccfile.stem}-loopnest.json" for ccfile in ccargs.ccfiles]
+    loopnestfiles = [f for f in loopnestfiles if f.is_file()]
+    root = read_json(files=loopnestfiles)
     root.expnumber = 0
     root.depth = 1
 
@@ -792,7 +855,7 @@ def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execop
         first = None
 
         for loop in rootloopnestexperiment.loopnest.subloops_recursive():
-            if loop.isroot:
+            if not loop.isloop:
                 continue
             filename = mkpath(loop.filename).resolve()
             line = loop.line-1     # is one-based
@@ -833,8 +896,6 @@ def run_experiment(tempdir: pathlib.Path, experiment: Experiment, ccargs, execop
 
     try:
         run_exec(experiment=experiment,cwd=expdir,exefile=exefile,execopts=execopts)
-        #p = invoke.diag(exefile, *execargs.args, cwd=expdir, onerror=invoke.Invoke.EXCEPTION, timeout=execargs.timeout,
-        #                std_prefixed=expdir / 'exec.txt', appendenv={'LD_LIBRARY_PATH': execargs.ld_library_path})
     except subprocess.TimeoutExpired:
         # Assume failure
         experiment.duration = math.inf
@@ -1046,7 +1107,6 @@ def autotune(parser, args):
                     for child in item.children():
                         pq.push(child)
 
-                    maxdepth = item.depth+1
                     closed.add(item)
                     continue
 
@@ -1070,6 +1130,7 @@ def main(argv: str) -> int:
     add_boolean_argument(parser, "--unrolling-full", default=True)
     parser.add_argument('--unrolling-factors')
     parser.add_argument('--packing-arrays',action='append')
+    add_boolean_argument(parser, "--fission", default=True)
 
     subparsers = parser.add_subparsers(dest='subcommand')
     for cmd, func in commands.items():
@@ -1098,6 +1159,8 @@ def main(argv: str) -> int:
             pack_arrays = set(arr for arrlist in args.packing_arrays for arr in arrlist.split(','))
     if pack_arrays:
             transformers.append(ArrayPacking.get_factory(pack_arrays))
+    if args.fission:
+        transformers.append(Fission.get_factory())
 
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:
