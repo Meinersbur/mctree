@@ -39,7 +39,7 @@ void init_array(int n, int m,
 
 /* DCE code. Must scan the entire live-out data.
    Can be used also to check the correctness of the output. */
-static __attribute__((noinline))
+static
 void print_array(int n,
 		 DATA_TYPE POLYBENCH_2D(C,N,N,n,n))
 {
@@ -76,14 +76,15 @@ void kernel_syr2k(int n, int m,
 //B is NxM
 //C is NxN
 #pragma scop
-  for (i = 0; i < _PB_N; i++)
+  for (i = 0; i < _PB_N; i++) {
     for (j = 0; j <= i; j++)
       C[i][j] *= beta;
-
-  for (i = 0; i < _PB_N; i++) 
     for (k = 0; k < _PB_M; k++)
       for (j = 0; j <= i; j++)
+	{
 	  C[i][j] += A[j][k]*alpha*B[i][k] + B[j][k]*alpha*A[i][k];
+	}
+  }
 #pragma endscop
 
 }

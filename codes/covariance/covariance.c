@@ -62,14 +62,12 @@ void kernel_covariance(int m, int n,
 
 #pragma scop
   for (j = 0; j < _PB_M; j++)
-    mean[j] = SCALAR_VAL(0.0);
-
-  for (j = 0; j < _PB_M; j++)
+    {
+      mean[j] = SCALAR_VAL(0.0);
       for (i = 0; i < _PB_N; i++)
         mean[j] += data[i][j];
-
-  for (j = 0; j < _PB_M; j++)
-    mean[j] /= float_n;
+      mean[j] /= float_n;
+    }
 
   for (i = 0; i < _PB_N; i++)
     for (j = 0; j < _PB_M; j++)
@@ -77,20 +75,13 @@ void kernel_covariance(int m, int n,
 
   for (i = 0; i < _PB_M; i++)
     for (j = i; j < _PB_M; j++)
+      {
         cov[i][j] = SCALAR_VAL(0.0);
-
-  for (i = 0; i < _PB_M; i++)
-    for (j = i; j < _PB_M; j++)
         for (k = 0; k < _PB_N; k++)
 	  cov[i][j] += data[k][i] * data[k][j];
-
-  for (i = 0; i < _PB_M; i++)
-    for (j = i; j < _PB_M; j++)
         cov[i][j] /= (float_n - SCALAR_VAL(1.0));
-
-  for (i = 0; i < _PB_M; i++)
-    for (j = i; j < _PB_M; j++)
         cov[j][i] = cov[i][j];
+      }
 #pragma endscop
 
 }

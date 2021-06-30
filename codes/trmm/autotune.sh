@@ -10,11 +10,10 @@ if [[ -z "${CLANG_PREFIX}" ]]; then
   exit 1
 fi
 
-(cd "${SCRIPTPATH}" && python3 "${ROOTPATH}/mctree.py" --packing-arrays=A,B autotune --polybench-time \
-  --ld-library-path="${CLANG_PREFIX}/lib:${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
+(cd "${SCRIPTPATH}" && python3 "${ROOTPATH}/mctree.py" autotune --ld-library-path="${CLANG_PREFIX}/lib:${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
   "${CLANG_PREFIX}/bin/clang" -I"${CLANG_PREFIX}/projects/openmp/runtime/src" -I"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" -L"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
-  -flegacy-pass-manager -mllvm -polly-position=early -O3 -march=native \
+  -mllvm -polly-position=early -O3 -march=native \
   *.c -o "${BASENAME}" \
   -I"${SCRIPTPATH}" \
-  -DLARGE_DATASET -mllvm -polly-only-func=kernel_trmm \
+  -DLARGE_DATASET -mllvm -polly-only-func=kernel_syrk \
   )
