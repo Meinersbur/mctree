@@ -82,7 +82,6 @@ class Loop:
 
         self.name = name
         self.subloops = []
-        self.isperfectnest = None
         self.filename = None
         self.line = None
         self.column = None
@@ -121,8 +120,6 @@ class Loop:
         result = [self]
         while True:
             lastsubloops = result[-1].subloops
-            if result[-1].isperfectnest == False:
-                break
             if len(lastsubloops) != 1:
                 break
             if not lastsubloops[0].isloop:
@@ -227,7 +224,6 @@ def json_to_loops(topmost, loopcounter):
             loop.line = tm["line"]
             loop.column = tm["column"]
             loop.function = tm["function"]
-            loop.isperfectnest = tm.get('perfectnest')
             sublooproot = json_to_loops(tm["children"], loopcounter)
             loop.subloops = sublooproot.subloops
             result.add_subloop(loop)
@@ -237,7 +233,6 @@ def json_to_loops(topmost, loopcounter):
             stmt.line = tm["line"]
             stmt.column = tm["column"]
             stmt.function = tm["function"]
-            #stmt.isperfectnest = tm.get('perfectnest')
             result.add_subloop(stmt)
         else:
             assert False, "unknown kind"
