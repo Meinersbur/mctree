@@ -88,10 +88,11 @@ class Loop:
         self.function = None
 
     def selector(self):
-        if self.isloop and self.transformable:
-            looptransformers = (t(self) for t in transformers)
-            for transformer in looptransformers:
-                yield transformer.get_num_children(), transformer.get_child
+        looptransformers = (t(self) for t in transformers)
+        for transformer in looptransformers:
+            if transformer == None:
+                continue
+            yield transformer.get_num_children(), transformer.get_child
 
         def make_replace_loop_closure(i,subloop):
             def replace_loop(loopcounter, idx: int):
@@ -263,11 +264,14 @@ class LoopNestExperiment:
     def __str__(self):
         return '\n'.join(self.to_lines())
 
-    def to_lines(self):
+    def to_lines(self,printloopnest=False):
         if self.pragmalist:
-            return self.pragmalist
-        else:
-            return self.loopnest.to_lines(0)
+            yield from self.pragmalist
+        
+        if not self.pragmalist or printloopnest:
+            if self.pragmalist:
+                yield "\n"
+            yield from self.loopnest.to_lines(0)
 
     def get_num_children(self):
         return self.loopnest.get_num_children()
@@ -369,7 +373,9 @@ class Tiling:
     @staticmethod
     def get_factory(tilesizes):
         def factory(loop):
-            return Tiling(loop, tilesizes)
+            if loop.isloop and loop.transformable:
+                return Tiling(loop, tilesizes)
+            return None
         return factory
 
     def __init__(self, loop, tilesizes):
@@ -428,7 +434,9 @@ class Threading:
     @staticmethod
     def get_factory():
         def factory(loop: Loop):
-            return Threading(loop)
+            if loop.isloop and loop.transformable:
+                return Threading(loop)
+            return None
         return factory
 
     def __init__(self, loop):
@@ -448,7 +456,9 @@ class Interchange:
     @staticmethod
     def get_factory():
         def factory(loop: Loop):
-            return Interchange(loop)
+            if loop.isloop and loop.transformable:
+                return Interchange(loop)
+            return None
         return factory
 
     def __init__(self, loop: Loop):
@@ -522,7 +532,9 @@ class Reversal:
     @staticmethod
     def get_factory():
         def factory(loop: Loop):
-            return Reversal(loop)
+            if loop.isloop and loop.transformable:
+                return Reversal(loop)
+            return None
         return factory
 
     def __init__(self, loop):
@@ -542,7 +554,9 @@ class Unrolling:
     @staticmethod
     def get_factory(factors, enable_full):
         def factory(loop: Loop):
-            return Unrolling(loop,factors,enable_full)
+            if loop.isloop and loop.transformable:
+                return Unrolling(loop,factors,enable_full)
+            return None
         return factory
 
     def __init__(self, loop: Loop, factors, enable_full):
@@ -583,7 +597,9 @@ class ArrayPacking:
     @staticmethod
     def get_factory(arrays):
         def factory(loop: Loop):
-            return ArrayPacking(loop,arrays)
+            if loop.isloop and loop.transformable:
+                return ArrayPacking(loop,arrays)
+            return None
         return factory
 
     def __init__(self, loop: Loop, arrays):
@@ -614,7 +630,9 @@ class Fission:
     @staticmethod
     def get_factory():
         def factory(loop):
-            return Fission(loop)
+            if loop.isloop and loop.transformable:
+                return Fission(loop)
+            return None
         return factory
 
     def __init__(self, loop):
@@ -625,6 +643,8 @@ class Fission:
         loop = self.loop
         subcount = len(loop.subloops)
 
+        # One split point
+        # TODO: arbitrary number of split points (2^n possibilities)
         def make_fission(loopcounter,idx: int):
             split_at = idx+1
             assert 0 < split_at < subcount
@@ -643,6 +663,73 @@ class Fission:
 
     def get_child(self, loopcounter, idx: int):
         return mcall(self.selector(), loopcounter, idx)
+
+
+
+class Fusion:
+    @staticmethod
+    def get_factory():
+        def factory(loop):
+            return Fusion(loop)
+        return factory
+
+    def __init__(self, loop):
+        self.loop = loop
+        self.num_children = mcount(self.selector())
+
+    def selector(self):
+        loop = self.loop
+        subcount = len(loop.subloops)
+        fusablecount = 0
+
+        def can_fuse(i):
+            fuse_loops = loop.subloops[i:i+2]
+            return fuse_loops[0].isloop and fuse_loops[1].isloop and fuse_loops[0].transformable and fuse_loops[1].transformable 
+
+        for i in range(subcount-1):
+            if can_fuse(i):
+                fusablecount+=1
+
+        # Fuse two neighboring loops
+        # TODO: Fuse any number of neigboring loops
+        def make_fusion(loopcounter,idx: int):
+            fuseidx = 0
+            for i in range(subcount-1):
+                if can_fuse(i):
+                    if fuseidx == idx:
+                        fusei = i
+                        break
+                    fuseidx+=1
+
+            fuse_loops = loop.subloops[fusei:fusei+2]
+
+            # TODO: parent can be a root/sequence as well
+            parent_loop = loop.clone()
+            fused_loop = Loop.createLoop(name=f"fuse{loopcounter.nextId()}")
+            parent_loop.subloops = []
+            for l in loop.subloops:
+                if l == fuse_loops[0]:
+                    parent_loop.subloops.append(fused_loop)
+                elif l == fuse_loops[1]:
+                    pass
+                else:
+                    parent_loop.subloops.append(l)
+            fused_loop.subloops = [outer for l in fuse_loops for outer in l.subloops]
+            #fused_loop.subloops = [inner for l in fuse_loops for outer in l.subloops for inner in outer.subloops]
+
+            # Loop fusion is special as we transform the parent, but add the pragma applies to the children while the parent keeps its name. The parent also does not need to be 'transformable'
+            pragma = f"#pragma clang loop({fuse_loops[0].name},{fuse_loops[1].name}) fuse fused_id({fused_loop.name})"
+            return [parent_loop], [pragma]
+
+        yield fusablecount,make_fusion
+
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
+
 
 
 def as_dot(baseexperiment: Experiment, max_depth=None, filter=None, decendfilter=None):
@@ -712,8 +799,8 @@ def example(parser, args):
         example = Loop.createRoot()
         example.new_subloop(loopcounter).new_substmt()
         outer = example.new_subloop(loopcounter)
-        outer.new_subloop(loopcounter)
-        outer.new_substmt()
+        outer.new_subloop(loopcounter).new_substmt()
+        #outer.new_substmt()
 
         root = Experiment()
         root.nestexperiments.append(LoopNestExperiment(example, [], loopcounter))
@@ -1126,6 +1213,7 @@ def main(argv: str) -> int:
     parser.add_argument('--unrolling-factors')
     parser.add_argument('--packing-arrays',action='append')
     add_boolean_argument(parser, "--fission", default=True)
+    add_boolean_argument(parser, "--fusion", default=True)
 
     subparsers = parser.add_subparsers(dest='subcommand')
     for cmd, func in commands.items():
@@ -1156,6 +1244,8 @@ def main(argv: str) -> int:
             transformers.append(ArrayPacking.get_factory(pack_arrays))
     if args.fission:
         transformers.append(Fission.get_factory())
+    if args.fusion:
+        transformers.append(Fusion.get_factory())
 
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:
