@@ -262,7 +262,7 @@ class LoopNestExperiment:
         self.loopcounter = loopcounter
 
     def __str__(self):
-        return '\n'.join(self.to_lines())
+        return '\n'.join(self.to_lines(printloopnest=True))
 
     def to_lines(self,printloopnest=False):
         if self.pragmalist:
@@ -270,7 +270,7 @@ class LoopNestExperiment:
         
         if not self.pragmalist or printloopnest:
             if self.pragmalist:
-                yield "\n"
+                yield ""
             yield from self.loopnest.to_lines(0)
 
     def get_num_children(self):
@@ -347,7 +347,7 @@ class Experiment:
     def __str__(self):
         return '\n'.join(self.to_lines())
 
-    def to_lines(self):
+    def to_lines(self,printloopnest=False):
         if self.expnumber != None:
             yield f"Experiment {self.expnumber}"
         if self.duration != None and self.duration != math.inf:
@@ -364,7 +364,7 @@ class Experiment:
                     break
             if funcname:
                 yield "Function " + funcname + ":"
-            for x in nestex.to_lines():
+            for x in nestex.to_lines(printloopnest=printloopnest):
                 yield "  " + x
             isFirst = False
 
@@ -593,6 +593,86 @@ class Unrolling:
         return mcall(self.selector(), loopcounter, idx)
 
 
+class UnrollingAndJam:
+    @staticmethod
+    def get_factory(factors, enable_full):
+        def factory(loop: Loop):
+            if loop.isloop and loop.transformable:
+                return UnrollingAndJam(loop,factors,enable_full)
+            return None
+        return factory
+
+    def __init__(self, loop: Loop, factors, enable_full):
+        self.loop = loop
+        self.factors = factors
+        self.enable_full = enable_full
+        self.num_children = mcount(self.selector())
+
+    def selector(self):
+        loop = self.loop
+
+        # Require at least one subloop, not necessarily perfectly nested
+        # TODO: jam depth, currently not supported by pragma-clang-loop
+        jammable_subloops = []
+        for l in loop.subloops:
+            if l.isloop and l.transformable:
+                jammable_subloops.append(l)
+        if not jammable_subloops:
+            return
+
+        def jam_content(loopcounter,subloops,repeats):
+            new_subloops = []
+            streak = []
+
+            def do_streak():
+                nonlocal streak,new_subloops
+                if not streak:
+                    return 
+                new_subloops += streak*repeats
+                streak = []
+
+            for sub in subloops:
+                if sub.isloop and sub.transformable:
+                    do_streak()
+                    jam = Loop.createLoop(name=f'jam{loopcounter.nextId()}')
+                    jam.subloops =  [s for s in sub.subloops]*repeats
+                    new_subloops.append(jam)
+                else:
+                    streak.append(sub)
+            do_streak()
+            return new_subloops
+                 
+        def make_full_unrollingandjam(loopcounter, idx: int):
+            assert idx == 0
+
+            # FIXME: Should jam repeat as often as we unroll, but don't know the trip count here
+            new_subloops = jam_content(loopcounter,loop.subloops, 1)
+
+            pragma = f"#pragma clang loop({self.loop.name}) unrollingandjam full"
+            return new_subloops, [pragma]
+
+        def make_partial_unrollingandjam(loopcounter, idx: int):
+            factor = self.factors[idx]
+
+            new_subloops = jam_content(loopcounter,loop.subloops, factor)
+
+            unrolled_loop = Loop.createLoop(name=f'unroll{loopcounter.nextId()}')
+            unrolled_loop.subloops = new_subloops
+            pragma = f"#pragma clang loop({self.loop.name}) unrollingandjam factor({factor})"
+            return [unrolled_loop], [pragma]                
+
+        if self.enable_full:
+            yield 1,make_full_unrollingandjam
+        yield len(self.factors),make_partial_unrollingandjam
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
+
+
+
 class ArrayPacking:
     @staticmethod
     def get_factory(arrays):
@@ -732,13 +812,13 @@ class Fusion:
 
 
 
-def as_dot(baseexperiment: Experiment, max_depth=None, filter=None, decendfilter=None):
+def as_dot(baseexperiment: Experiment, max_depth=None, filter=None, decendfilter=None, loopneststructure=False):
     yield 'digraph G {'
     yield '  rankdir=LR;'
     yield ''
 
     for experiment in baseexperiment.derivatives_recursive(max_depth=max_depth, filter=filter, descendfilter=decendfilter):
-        desc = ''.join(l + '\\l' for l in experiment.to_lines())
+        desc = ''.join(l + '\\l' for l in experiment.to_lines(printloopnest=loopneststructure))
 
         if experiment.duration == math.inf:
             fillcolor = 'lightpink:crimson'
@@ -793,7 +873,7 @@ def add_boolean_argument(parser, name, default=False, dest=None, help=None):
 @subcommand("example")
 def example(parser, args):
     if parser:
-        pass
+        add_boolean_argument(parser,'loopneststructure')
     if args:
         loopcounter = LoopCounter()
         example = Loop.createRoot()
@@ -805,7 +885,7 @@ def example(parser, args):
         root = Experiment()
         root.nestexperiments.append(LoopNestExperiment(example, [], loopcounter))
 
-        for line in as_dot(root, max_depth=args.maxdepth):
+        for line in as_dot(root, max_depth=args.maxdepth,loopneststructure=args.loopneststructure):
             print(line)
         return 0
 
@@ -1211,6 +1291,9 @@ def main(argv: str) -> int:
     add_boolean_argument(parser, "--unrolling", default=True)
     add_boolean_argument(parser, "--unrolling-full", default=True)
     parser.add_argument('--unrolling-factors')
+    add_boolean_argument(parser, "--unrolling-and-jam", default=True)
+    add_boolean_argument(parser, "--unrolling-and-jam-full", default=True)
+    parser.add_argument('--unrolling-and-jam-factors')
     parser.add_argument('--packing-arrays',action='append')
     add_boolean_argument(parser, "--fission", default=True)
     add_boolean_argument(parser, "--fusion", default=True)
@@ -1237,6 +1320,11 @@ def main(argv: str) -> int:
         if args.unrolling_factors != None:
             factors = [int(s) for s in args.unrolling_factors.split(',')]
         transformers.append(Unrolling.get_factory(factors,args.unrolling_full))
+    if args.unrolling_and_jam:
+        factors = [2, 4, 8]
+        if args.unrolling_and_jam_factors != None:
+            factors = [int(s) for s in args.unroll_and_jam_factors.split(',')]
+        transformers.append(UnrollingAndJam.get_factory(factors,args.unrolling_and_jam_full))
     pack_arrays = set()
     if args.packing_arrays:
             pack_arrays = set(arr for arrlist in args.packing_arrays for arr in arrlist.split(','))
