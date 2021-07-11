@@ -595,30 +595,28 @@ class Unrolling:
 
 class UnrollingAndJam:
     @staticmethod
-    def get_factory(factors, enable_full):
+    def get_factory(factors):
         def factory(loop: Loop):
             if loop.isloop and loop.transformable:
-                return UnrollingAndJam(loop,factors,enable_full)
+                return UnrollingAndJam(loop,factors)
             return None
         return factory
 
-    def __init__(self, loop: Loop, factors, enable_full):
+    def __init__(self, loop: Loop, factors):
         self.loop = loop
         self.factors = factors
-        self.enable_full = enable_full
         self.num_children = mcount(self.selector())
 
     def selector(self):
         loop = self.loop
 
-        # Require at least one subloop, not necessarily perfectly nested
+        # Require exactly one subloop
         # TODO: jam depth, currently not supported by pragma-clang-loop
-        jammable_subloops = []
-        for l in loop.subloops:
-            if l.isloop and l.transformable:
-                jammable_subloops.append(l)
-        if not jammable_subloops:
+        if len(loop.subloops) != 1:
             return
+        subloop = loop.subloops[0]
+        if not subloop.isloop or not subloop.transformable:
+             return
 
         def jam_content(loopcounter,subloops,repeats):
             new_subloops = []
@@ -661,7 +659,7 @@ class UnrollingAndJam:
             pragma = f"#pragma clang loop({self.loop.name}) unrollingandjam factor({factor})"
             return [unrolled_loop], [pragma]                
 
-        if self.enable_full:
+        if False:
             yield 1,make_full_unrollingandjam
         yield len(self.factors),make_partial_unrollingandjam
 
@@ -1292,7 +1290,7 @@ def main(argv: str) -> int:
     add_boolean_argument(parser, "--unrolling-full", default=True)
     parser.add_argument('--unrolling-factors')
     add_boolean_argument(parser, "--unrolling-and-jam", default=True)
-    add_boolean_argument(parser, "--unrolling-and-jam-full", default=True)
+    #add_boolean_argument(parser, "--unrolling-and-jam-full", default=True)
     parser.add_argument('--unrolling-and-jam-factors')
     parser.add_argument('--packing-arrays',action='append')
     add_boolean_argument(parser, "--fission", default=True)
@@ -1323,8 +1321,8 @@ def main(argv: str) -> int:
     if args.unrolling_and_jam:
         factors = [2, 4, 8]
         if args.unrolling_and_jam_factors != None:
-            factors = [int(s) for s in args.unroll_and_jam_factors.split(',')]
-        transformers.append(UnrollingAndJam.get_factory(factors,args.unrolling_and_jam_full))
+            factors = [int(s) for s in args.unrolling_and_jam_factors.split(',')]
+        transformers.append(UnrollingAndJam.get_factory(factors))
     pack_arrays = set()
     if args.packing_arrays:
             pack_arrays = set(arr for arrlist in args.packing_arrays for arr in arrlist.split(','))
