@@ -15,6 +15,6 @@ fi
   "${CLANG_PREFIX}/bin/clang" -I"${CLANG_PREFIX}/projects/openmp/runtime/src" -I"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" -L"${CLANG_PREFIX}/runtimes/runtimes-bins/openmp/runtime/src" \
   -flegacy-pass-manager -mllvm -polly-position=early -O3 -march=native \
   *.c -o "${BASENAME}" \
-  -I"${SCRIPTPATH}" -lm -mllvm -polly-allow-nonaffine -mllvm -polly-allow-nonaffine-branches -DNDEBUG \
+  -I"${SCRIPTPATH}" -lm -mllvm -polly-allow-nonaffine -mllvm -polly-allow-nonaffine-branches -mllvm -polly-ignore-aliasing -DNDEBUG \
   -DDOUBLE -mllvm -polly-only-func=ljForce_kernel \
   )
