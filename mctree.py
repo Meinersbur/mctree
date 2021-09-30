@@ -907,7 +907,7 @@ def jsonfile(parser, args):
     if parser:
         parser.add_argument('filename', nargs='+')
     if args:
-        root = read_json(files=args.filenames)
+        root = read_json(files=args.filename)
         for line in as_dot(root, max_depth=args.maxdepth):
             print(line)
         return 0
