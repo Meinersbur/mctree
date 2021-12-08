@@ -3,10 +3,8 @@
 
 import argparse
 import contextlib
-import csv
 import datetime
 import heapq
-import itertools
 import json
 import math
 import os
