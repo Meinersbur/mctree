@@ -8,7 +8,7 @@ import io
 import threading
 import platform
 import pathlib
-from tool.support import *
+from .support import *
 import datetime
 
 

@@ -2,7 +2,15 @@
 # -*- coding: utf-8 -*-
 
 import sys
-from mctree import main
+from pathlib import Path
 
-if errcode := main.main(argv=sys.argv):
+script = Path(sys.argv[0]).absolute()
+thisscript = Path(__file__)
+
+sys.path.insert(0,str( (thisscript.parent.parent / 'src').absolute() ))
+from mctree.__main__ import main
+
+
+
+if errcode := main(argv=sys.argv):
     exit(errcode)
