@@ -49,7 +49,6 @@ def autotune(parser, args):
         execopts.args = shcombine(arg=args.exec_arg,args=args.exec_args)
 
         outdir = mkpath(args.outdir)
-        maxdepth = 0
         num_experiments = 0
 
         with contextlib.ExitStack() as stack:
@@ -150,6 +149,7 @@ def example(parser, args):
         return 0
 
 
+
 @subcommand("jsonfile")
 def jsonfile(parser, args):
     if parser:
@@ -166,10 +166,11 @@ def jsonfile(parser, args):
 def jsonfile(parser, args):
     if parser:
         parser.add_argument('filename', nargs='+')
-        parser.add_argument('output',type=pathlib.Path)
-        parser.add_argument('depth', type=int,default=3)
+        parser.add_argument('--output',type=pathlib.Path)
+        parser.add_argument('--maxdepth', type=int,default=1)
     if args:
-        gen_ytopt_problem(filename=args.filename,output=args.output, depth=args.depth)
+        import mctree.ytoptgen as ytoptgen
+        ytoptgen.gen_ytopt_problem(filename=args.filename,output=args.output, max_depth=args.maxdepth)
 
 
 
