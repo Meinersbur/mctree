@@ -30,6 +30,13 @@ def param_for_experiment(experiment):
     p += 1
     return param
 
+condnames = []
+def new_cond():
+    global condnames
+    result = f"c{len(condnames)}"
+    condnames.append(result)
+    return result 
+
 
 # TODO: Consolidate with same functionality from run_experiment 
 def prepare_cfiles(experiment, outdir):
@@ -99,7 +106,6 @@ def gen_ytopt_problem(filename, outdir: pathlib.Path, max_depth):
 
     global params
     conditions = []
-    conds = []
 
 
     
@@ -124,7 +130,33 @@ from plopper import *
 cs = CS.ConfigurationSpace(seed=1234)
 """)
 
+
+        enabledif = dict()        
+
         # TODO: One for each nestexperiment
+        for experiment in root.derivatives_recursive(max_depth=max_depth):
+            for cne in experiment.nestexperiments: 
+                param = param_for_experiment(cne)
+                    
+                choices = []
+                for c in experiment.derivatives_recursive(max_depth=1):
+                    if c is experiment :
+                        continue
+                    for cne in c.nestexperiments:                
+                        addedpragmas = '\n'.join(cne.newpragmas)
+                        choice = addedpragmas
+                        if experiment.depth < max_depth:
+                            cparam = param_for_experiment(cne)
+                            choice = f"#{cparam}\n{addedpragmas}"
+                            enabledif[cparam] = (param, choice)
+
+                            c = new_cond()
+                            conditions.append(f"{c} = CS.EqualsCondition({cparam}, {param}, {pyescape(choice)})")
+                        choices.append(choice)
+                
+                f.write(f"{param} = CSH.CategoricalHyperparameter(name='{param}', choices={pylist(choices)}, default_value='')\n") 
+
+
         for experiment in root.derivatives_recursive(max_depth=max_depth):
             param = None
             assert len(experiment.nestexperiments)==1
@@ -136,23 +168,20 @@ cs = CS.ConfigurationSpace(seed=1234)
                     f.write(f"{ep.name} = CSH.CategoricalHyperparameter(name='{ep.name}', choices={ep.choices}, default_value={pyescape(ep.choices[0])})\n") 
                     params.append(ep.name)
 
+                    parentp,parentv = enabledif.get(param)
 
-            choices = []
-            for c in experiment.derivatives_recursive(max_depth=1):
-                if c is experiment :
-                    continue
-                for cne in c.nestexperiments:                
-                    addedpragmas = '\n'.join(cne.newpragmas)
-                    choice = addedpragmas
-                    if experiment.depth < max_depth:
-                        cparam = param_for_experiment(cne)
-                        choice = f"#{cparam}\n{addedpragmas}"
-                    choices.append(choice)
-            
-            f.write(f"{param} = CSH.CategoricalHyperparameter(name='{param}', choices={pylist(choices)}, default_value='')\n") 
+                    c = new_cond()
+                    conditions.append(f"{c} = CS.EqualsCondition({ep.name}, {parentp}, {pyescape(parentv)})")
 
 
-        f.write(f"cs.add_hyperparameters({', '.join(params)})\n")
+        f.write(f"cs.add_hyperparameters([{', '.join(params)}])\n")
+        f.write("\n")
+
+        for c in conditions:
+            f.write(c)
+            f.write('\n')
+        f.write(f"cs.add_conditions([{', '.join(condnames)}])\n")
+
         f.write("\n")
         f.write(f'sourcefile = {pyescape(str(newccfiles))}\n') # TODO: More than one file
 
