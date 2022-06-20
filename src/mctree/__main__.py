@@ -8,6 +8,7 @@ import argparse
 from mctree import *
 import mctree.tool.invoke as invoke
 from mctree.tool.support import *
+import mctree 
 
 # Decorator
 commands = {}
@@ -160,22 +161,20 @@ def jsonfile(parser, args):
             print(line)
         return 0
 
-
+import mctree.ytoptgen as ytoptgen
 
 @subcommand("ytopt-problem")
-def jsonfile(parser, args):
+def ytopt(parser, args):
     if parser:
         parser.add_argument('filename', nargs='+')
         parser.add_argument('--output',type=pathlib.Path)
-        parser.add_argument('--maxdepth', type=int,default=1)
     if args:
-        import mctree.ytoptgen as ytoptgen
         ytoptgen.gen_ytopt_problem(filename=args.filename,output=args.output, max_depth=args.maxdepth)
 
 
 
 def main(argv: str) -> int:
-    global transformers
+    global transformers 
     parser = argparse.ArgumentParser(description="Loop transformation search tree proof-of-concept", allow_abbrev=False)
 
     parser.add_argument('--maxdepth', type=int, default=2)
@@ -193,6 +192,7 @@ def main(argv: str) -> int:
     parser.add_argument('--packing-arrays',action='append')
     add_boolean_argument(parser, "--fission", default=True)
     add_boolean_argument(parser, "--fusion", default=True)
+    add_boolean_argument(parser, "--parametric", default=False)
 
     subparsers = parser.add_subparsers(dest='subcommand')
     for cmd, func in commands.items():
@@ -201,10 +201,13 @@ def main(argv: str) -> int:
     args = parser.parse_args(str(v) for v in argv[1:])
 
     if args.tiling:
-        tilesizes = [4, 16, 64, 256]
+        tilesizes = [4,16]
         if args.tiling_sizes != None:
             tilesizes = [int(s) for s in args.tiling_sizes.split(',')]
-        transformers.append(Tiling.get_factory(tilesizes))
+        if args.parametric:
+            transformers.append(TilingParametric.get_factory(tilesizes))
+        else:
+            transformers.append(Tiling.get_factory(tilesizes))
     if args.threading:
         transformers.append(Threading.get_factory())
     if args.interchange:
@@ -231,9 +234,9 @@ def main(argv: str) -> int:
     if args.fusion:
         transformers.append(Fusion.get_factory())
 
+    mctree.mctree.parametric = args.parametric # FIXME: parametric is by-value in imported modules, use a set_config fucntion or so 
+
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:
         die("No command?")
     return cmdlet(parser=None, args=args)
-
-

@@ -9,7 +9,6 @@ import os
 import pathlib
 import subprocess
 
-
 import mctree.tool.invoke as invoke
 from mctree.tool.support import *
 
@@ -35,6 +34,11 @@ def mcall(seq, loopcounter, idx: int):
     pos, elt = mselect(seq, idx)
     return elt(loopcounter, pos)
 
+def mcall_first(seq, loopcounter, idx: int):
+    pos, elt = mselect(seq, idx)
+    func = elt[0]
+    args = elt[1:]
+    return [func(loopcounter, pos)] + args
 
 def neighbors(seq):
     it = iter(seq)
@@ -45,7 +49,7 @@ def neighbors(seq):
 
 
 transformers = []
-
+parametric = False
 
 class Loop:
     @classmethod
@@ -91,12 +95,12 @@ class Loop:
 
         def make_replace_loop_closure(i,subloop):
             def replace_loop(loopcounter, idx: int):
-                newsubloop, pragmas = subloop.get_child(loopcounter, idx)
+                newsubloop, pragmas, params = subloop.get_child(loopcounter, idx)
                 assert isinstance(newsubloop,list), "Please return a list of replacement loops"
                 newloop = self.clone()
                 newloop.subloops = newloop.subloops[:i] + newsubloop + newloop.subloops[i+1:]
                 #newloop.subloops[i] = newsubloop
-                return [newloop], pragmas
+                return [newloop], pragmas, params
             return replace_loop
 
         for i, subloop in enumerate(self.subloops):
@@ -238,6 +242,7 @@ def json_to_loops(topmost, loopcounter):
 class LoopCounter:
     def __init__(self):
         self.prevloopid = 0
+        self.prevparamid = 0
 
     def clone(self):
         result = LoopCounter()
@@ -248,11 +253,18 @@ class LoopCounter:
         self.prevloopid += 1
         return self.prevloopid 
 
+    def nextParamId(self):
+        self.prevparamid += 1
+        return self.prevparamid
+
+
 class LoopNestExperiment:
-    def __init__(self, loopnest, pragmalist, loopcounter):
+    def __init__(self, parent, loopnest, newpragmas, newparams, loopcounter):
         assert loopnest.isroot
+        self.parent = parent 
         self.loopnest = loopnest
-        self.pragmalist = pragmalist
+        self.newpragmas = newpragmas
+        self.newparams = newparams
         self.derived_from = None
         self.loopcounter = loopcounter
 
@@ -273,13 +285,25 @@ class LoopNestExperiment:
 
     def get_child(self, idx: int):
         resetloopcounter = self.loopcounter.clone()
-        loopnest, pragmalist = self.loopnest.get_child(resetloopcounter, idx)
+        loopnest, pragmalist, paramslist = self.loopnest.get_child(resetloopcounter, idx)
         assert len(loopnest)==1
         assert loopnest[0].isroot
-        result = LoopNestExperiment(loopnest[0], self.pragmalist + pragmalist, loopcounter=resetloopcounter)
+        result = LoopNestExperiment(self, loopnest[0], pragmalist, paramslist, loopcounter=resetloopcounter) 
         result.derived_from = self
         return result
 
+    @property
+    def pragmalist(self):
+        result = self.parent.pragmalist if self.parent else [] 
+        result = result + self.newpragmas
+        return result
+        
+    @property
+    def paramlist(self):
+        result = self.parent.paramlist if self.parent else [] 
+        result = result + self.newparams
+        return result
+        
 
 class Experiment:
     def __init__(self):
@@ -363,6 +387,82 @@ class Experiment:
                 yield "  " + x
             isFirst = False
 
+class Param :
+    def __init__(self,name):
+        self.name = name 
+
+class BoolParam(Param):
+    def __init__(self,name):
+         super().__init__(name) 
+
+class IntegerParam(Param):
+    def __init__(self, name,min=None,max=None):
+        super().__init__(name) 
+        self.min=min
+        self.max=max
+
+class ChoicesParam(Param):
+    def __init__(self, name  ,choices):
+        super().__init__(name) 
+        self.choices = choices
+
+
+class TilingParametric:
+    @staticmethod
+    def get_factory(tilesizes):
+        def factory(loop):
+            if loop.isloop and loop.transformable:
+                return TilingParametric(loop, tilesizes)
+            return None
+        return factory
+
+    def __init__(self, loop, tilesizes):
+        self.loop = loop
+        self.tilesizes = tilesizes
+        self.num_children = mcount(self.selector())
+
+    def apply_transform(self,loopnest,loopcounter,d):
+        assert d >= 1
+
+        paramid = loopcounter.nextParamId();
+        param_peel = ChoicesParam(f"p_tile{paramid}_peel", choices=["", "peel(rectangular)"])
+        params_tilesizes = list(ChoicesParam(f"p_tile{paramid}_depth{d}",self.tilesizes) for d in range(0,d))
+        params = [param_peel] + params_tilesizes
+
+        origloops = loopnest[:d]
+        keeploops = loopnest[d:]
+        floors = list([Loop.createLoop(name=f'floor{loopcounter.nextId()}') for i in range(0, d)])
+        tiles = list([Loop.createLoop(name=f'tile{loopcounter.nextId()}') for i in range(0, d)])
+        newloops = floors + tiles
+        for outer, inner in neighbors(newloops):
+            outer.subloops = [inner]
+        newloops[-1].subloops = origloops[-1].subloops
+
+        origloopids = [l.name for l in origloops]
+        floorids = [floor.name for floor in floors]
+        tileids = [tile.name for tile in tiles]
+        pragma = f"#pragma clang loop({','.join(origloopids)}) tile sizes({','.join(f'#{p.name}' for p in params_tilesizes)}) #{param_peel.name} floor_ids({','.join(floorids)}) tile_ids({','.join(tileids)})"
+        return [newloops[0]], [pragma], params
+
+    def selector(self):
+        loopnest = self.loop.perfectnest()
+        n = len(loopnest)
+
+        def make_child_closure(depth):
+            def make_child(loopcounter,idx: int):                    
+                assert idx == 0
+                return self.apply_transform(loopnest=loopnest,loopcounter=loopcounter,d=depth)
+            return make_child
+
+        for depth in range(1, n+1):
+            yield 1, make_child_closure(depth)
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
+
 
 class Tiling:
     @staticmethod
@@ -396,7 +496,7 @@ class Tiling:
         sizes = [str(s) for s in sizes]
         peelclause = " peel(rectangular)" if peel else ""
         pragma = f"#pragma clang loop({','.join(origloopids)}) tile sizes({','.join(sizes)}){peelclause} floor_ids({','.join(floorids)}) tile_ids({','.join(tileids)})"
-        return [newloops[0]], [pragma]
+        return [newloops[0]], [pragma], []
 
     def selector(self):
         loopnest = self.loop.perfectnest()
@@ -423,6 +523,7 @@ class Tiling:
 
     def get_child(self, loopcounter, idx: int):
         return mcall(self.selector(), loopcounter, idx)
+
 
 
 class Threading:
@@ -864,7 +965,7 @@ def read_json(files):
         loopcounter = LoopCounter()
         for ln in loopnests:
             nestroot = json_to_loops(ln["children"], loopcounter)
-            exroot = LoopNestExperiment(nestroot, [], loopcounter=loopcounter)
+            exroot = LoopNestExperiment(None, nestroot, [], [], loopcounter=loopcounter)
             root.nestexperiments.append(exroot)
     return root
 
