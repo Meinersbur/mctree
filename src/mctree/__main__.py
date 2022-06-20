@@ -215,15 +215,24 @@ def main(argv: str) -> int:
     if args.reversal:
         transformers.append(Reversal.get_factory())
     if args.unrolling:
+        if args.unrolling_full:
+            transformers.append(UnrollingFull.get_factory(factors))   
+
         factors = [2, 4, 8]
         if args.unrolling_factors != None:
             factors = [int(s) for s in args.unrolling_factors.split(',')]
-        transformers.append(Unrolling.get_factory(factors,args.unrolling_full))
+        if args.parametric:
+            transformers.append(UnrollingParametric.get_factory(factors))
+        else:
+            transformers.append(Unrolling.get_factory(factors))
     if args.unrolling_and_jam:
         factors = [2, 4, 8]
         if args.unrolling_and_jam_factors != None:
             factors = [int(s) for s in args.unrolling_and_jam_factors.split(',')]
-        transformers.append(UnrollingAndJam.get_factory(factors))
+        if args.parametric:
+            transformers.append(UnrollingAndJam.get_factory(factors))
+        else:
+            transformers.append(UnrollingAndJamParametric.get_factory(factors))
     pack_arrays = set()
     if args.packing_arrays:
             pack_arrays = set(arr for arrlist in args.packing_arrays for arr in arrlist.split(','))
@@ -234,7 +243,6 @@ def main(argv: str) -> int:
     if args.fusion:
         transformers.append(Fusion.get_factory())
 
-    mctree.mctree.parametric = args.parametric # FIXME: parametric is by-value in imported modules, use a set_config fucntion or so 
 
     cmdlet = commands.get(args.subcommand)
     if not cmdlet:

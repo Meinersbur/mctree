@@ -49,7 +49,6 @@ def neighbors(seq):
 
 
 transformers = []
-parametric = False
 
 class Loop:
     @classmethod
@@ -391,10 +390,6 @@ class Param :
     def __init__(self,name):
         self.name = name 
 
-class BoolParam(Param):
-    def __init__(self,name):
-         super().__init__(name) 
-
 class IntegerParam(Param):
     def __init__(self, name,min=None,max=None):
         super().__init__(name) 
@@ -545,7 +540,7 @@ class Threading:
         parallel_loop = Loop.createAnonLoop()
         parallel_loop.subloops = self.loop.subloops
         pragma = f"#pragma clang loop({self.loop.name}) parallelize_thread"
-        return [parallel_loop], [pragma]
+        return [parallel_loop], [pragma], []
 
 
 class Interchange:
@@ -608,7 +603,7 @@ class Interchange:
                 permids = [p.name for p in perm]
                 newpermids = [p.name for p in newperm]
                 pragma = f"#pragma clang loop({','.join(nestids)}) interchange permutation({','.join(permids)}) permuted_ids({','.join(newpermids)})"
-                return [newperm[0]], [pragma]
+                return [newperm[0]], [pragma], []
             return make_child
 
         num_children = (n-1)
@@ -643,22 +638,22 @@ class Reversal:
         reversed_loop = Loop.createLoop(name=f'rev{loopcounter.nextId()}')
         reversed_loop.subloops = self.loop.subloops
         pragma = f'#pragma clang loop({self.loop.name}) reverse reversed_id({reversed_loop.name})'
-        return [reversed_loop], [pragma]
+        return [reversed_loop], [pragma], []
 
 
-class Unrolling:
+
+
+class UnrollingFull:
     @staticmethod
-    def get_factory(factors, enable_full):
+    def get_factory(factors):
         def factory(loop: Loop):
             if loop.isloop and loop.transformable:
-                return Unrolling(loop,factors,enable_full)
+                return UnrollingFull(loop,factors)
             return None
         return factory
 
-    def __init__(self, loop: Loop, factors, enable_full):
+    def __init__(self, loop: Loop):
         self.loop = loop
-        self.factors = factors
-        self.enable_full = enable_full
         self.num_children = mcount(self.selector())
 
     def selector(self):
@@ -671,15 +666,79 @@ class Unrolling:
             pragma = f"#pragma clang loop({self.loop.name}) unrolling full"
             return [unrolled_loop], [pragma]
 
+        yield 1, make_full_unrolling
+ 
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
+
+
+
+
+class UnrollingParametric:
+    @staticmethod
+    def get_factory(factors):
+        def factory(loop: Loop):
+            if loop.isloop and loop.transformable:
+                return Unrolling(loop,factors)
+            return None
+        return factory
+
+    def __init__(self, loop: Loop, factors):
+        self.loop = loop
+        self.factors = factors
+        self.num_children = mcount(self.selector())
+
+    def selector(self):
+        loop = self.loop
+
+        def make_partial_unrolling(loopcounter, idx: int):
+            assert idx == 0
+
+            paramid = loopcounter.nextParamId();
+            param_factor = ChoicesParam(f"p_unroll{paramid}_factor", choices=self.factors)
+            
+            unrolled_loop = Loop.createLoop(name=f'unroll{loopcounter.nextId()}')
+            unrolled_loop.subloops = loop.subloops
+            pragma = f"#pragma clang loop({self.loop.name}) unrolling factor(#{param_factor.name})"
+            return [unrolled_loop], [pragma], [param_factor]                
+
+        yield 1, make_partial_unrolling
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
+
+
+
+class Unrolling:
+    @staticmethod
+    def get_factory(factors):
+        def factory(loop: Loop):
+            if loop.isloop and loop.transformable:
+                return Unrolling(loop,factors)
+            return None
+        return factory
+
+    def __init__(self, loop: Loop, factors):
+        self.loop = loop
+        self.factors = factors
+        self.num_children = mcount(self.selector())
+
+    def selector(self):
+        loop = self.loop
+
         def make_partial_unrolling(loopcounter, idx: int):
             factor = self.factors[idx]
             unrolled_loop = Loop.createLoop(name=f'unroll{loopcounter.nextId()}')
             unrolled_loop.subloops = loop.subloops
             pragma = f"#pragma clang loop({self.loop.name}) unrolling factor({factor})"
-            return [unrolled_loop], [pragma]                
+            return [unrolled_loop], [pragma], []                
 
-        if self.enable_full:
-            yield 1, make_full_unrolling
         yield len(self.factors), make_partial_unrolling
 
     def get_num_children(self):
@@ -687,6 +746,79 @@ class Unrolling:
 
     def get_child(self, loopcounter, idx: int):
         return mcall(self.selector(), loopcounter, idx)
+
+
+
+class UnrollingAndJamParametric:
+    @staticmethod
+    def get_factory(factors):
+        def factory(loop: Loop):
+            if loop.isloop and loop.transformable:
+                return UnrollingAndJam(loop,factors)
+            return None
+        return factory
+
+    def __init__(self, loop: Loop, factors):
+        self.loop = loop
+        self.factors = factors
+        self.num_children = mcount(self.selector())
+
+    def selector(self):
+        loop = self.loop
+
+        # Require exactly one subloop
+        # TODO: jam depth, currently not supported by pragma-clang-loop
+        if len(loop.subloops) != 1:
+            return
+        subloop = loop.subloops[0]
+        if not subloop.isloop or not subloop.transformable:
+             return
+
+        def jam_content(loopcounter,subloops):
+            new_subloops = []
+            streak = []
+
+            def do_streak():
+                nonlocal streak,new_subloops
+                if not streak:
+                    return 
+                new_subloops += streak
+                streak = []
+
+            for sub in subloops:
+                if sub.isloop and sub.transformable:
+                    do_streak()
+                    jam = Loop.createLoop(name=f'jam{loopcounter.nextId()}')
+                    jam.subloops =  [s for s in sub.subloops]
+                    for subloop in jam.subloops:
+                        subloops.transformable = False
+                    new_subloops.append(jam)
+                else:
+                    streak.append(sub)
+            do_streak()
+            return new_subloops
+                 
+        def make_partial_unrollingandjam(loopcounter, idx: int):
+            assert idx==1
+
+            paramid = loopcounter.nextParamId();
+            param_factor = ChoicesParam(f"p_unrollandjam{paramid}_factor", choices=self.factors)
+
+            new_subloops = jam_content(loopcounter,loop.subloops)
+
+            unrolled_loop = Loop.createLoop(name=f'unroll{loopcounter.nextId()}')
+            unrolled_loop.subloops = new_subloops
+            pragma = f"#pragma clang loop({self.loop.name}) unrollingandjam factor(#{param_factor.name})"
+            return [unrolled_loop], [pragma], []                
+
+        yield 1,make_partial_unrollingandjam
+
+    def get_num_children(self):
+        return self.num_children
+
+    def get_child(self, loopcounter, idx: int):
+        return mcall(self.selector(), loopcounter, idx)
+
 
 
 class UnrollingAndJam:
@@ -743,7 +875,7 @@ class UnrollingAndJam:
             new_subloops = jam_content(loopcounter,loop.subloops, 1)
 
             pragma = f"#pragma clang loop({self.loop.name}) unrollingandjam full"
-            return new_subloops, [pragma]
+            return new_subloops, [pragma], []
 
         def make_partial_unrollingandjam(loopcounter, idx: int):
             factor = self.factors[idx]
@@ -753,7 +885,7 @@ class UnrollingAndJam:
             unrolled_loop = Loop.createLoop(name=f'unroll{loopcounter.nextId()}')
             unrolled_loop.subloops = new_subloops
             pragma = f"#pragma clang loop({self.loop.name}) unrollingandjam factor({factor})"
-            return [unrolled_loop], [pragma]                
+            return [unrolled_loop], [pragma], []                
 
         if False:
             yield 1,make_full_unrollingandjam
