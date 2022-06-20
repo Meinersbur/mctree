@@ -167,9 +167,9 @@ import mctree.ytoptgen as ytoptgen
 def ytopt(parser, args):
     if parser:
         parser.add_argument('filename', nargs='+')
-        parser.add_argument('--output',type=pathlib.Path)
+        parser.add_argument('--outdir',type=pathlib.Path)
     if args:
-        ytoptgen.gen_ytopt_problem(filename=args.filename,output=args.output, max_depth=args.maxdepth)
+        ytoptgen.gen_ytopt_problem(filename=args.filename,outdir=args.outdir, max_depth=args.maxdepth)
 
 
 
