@@ -49,6 +49,12 @@ def neighbors(seq):
 
 
 transformers = []
+ccs = None
+def enable_ccs():
+    global ccs
+    import cconfigspace as ccs
+    rng = ccs.Rng()
+    return ccs
 
 class Loop:
     @classmethod
@@ -313,6 +319,11 @@ class Experiment:
         self.exppath = None
         self.expnumber = None
         self.depth = 0
+        if ccs:
+            # Python error if accessed without ccs enabled
+            self.ccs = None
+
+        
 
     def clone(self):
         result = Experiment()
@@ -385,6 +396,15 @@ class Experiment:
             for x in nestex.to_lines(printloopnest=printloopnest):
                 yield "  " + x
             isFirst = False
+
+
+    def as_ccs(self):
+        if not self.ccs:
+            arity = self.get_num_children()
+            self.ccs =  ccs.Tree(arity=arity)
+            self.ccs.user_data = self
+        return self.ccs
+
 
 class Param :
     def __init__(self,name):
@@ -564,53 +584,50 @@ class Interchange:
         if n <= 1:
             return
 
-        def make_make_child_closure(d):
-            def make_child(loopcounter, idx: int):
-                orignest = loopnest.copy()
-                remaining = loopnest.copy()
-                perm = []
+        def make_child(loopcounter, idx: int):
+            orignest = loopnest.copy()
+            remaining = loopnest.copy()
+            perm = []
 
-                i = idx
+            i = idx
 
-                # New topmost loop cannot be the old topmost
-                # Otherwise it should be an interchange of the nested loop; this also excludes the identity permutation
-                select = i % (len(remaining) - 1) + 1
-                i //= (len(remaining) - 1)
+            # New topmost loop cannot be the old topmost
+            # Otherwise it should be an interchange of the nested loop; this also excludes the identity permutation
+            select = i % (len(remaining) - 1) + 1
+            i //= (len(remaining) - 1)
+            perm.append(remaining[select])
+            del remaining[select]
+
+            while remaining:
+                select = i % len(remaining)
+                i //= len(remaining)
                 perm.append(remaining[select])
                 del remaining[select]
 
-                while remaining:
-                    select = i % len(remaining)
-                    i //= len(remaining)
-                    perm.append(remaining[select])
-                    del remaining[select]
+            assert i == 0
+            assert len(perm) == n
+            assert len(remaining) == 0
 
-                assert i == 0
-                assert len(perm) == n
-                assert len(remaining) == 0
+            # Strip trailing unchanged loops
+            while perm[-1] == orignest[-1]:
+                del perm[-1]
+                del orignest[-1]
 
-                # Strip trailing unchanged loops
-                while perm[-1] == orignest[-1]:
-                    del perm[-1]
-                    del orignest[-1]
+            newperm = [Loop.createLoop(name=f'perm{loopcounter.nextId()}') for l in perm]
+            for p, c in neighbors(newperm):
+                p.subloops = [c]
+            newperm[-1].subloops = orignest[-1].subloops
 
-                newperm = [Loop.createLoop(name=f'perm{loopcounter.nextId()}') for l in perm]
-                for p, c in neighbors(newperm):
-                    p.subloops = [c]
-                newperm[-1].subloops = orignest[-1].subloops
+            nestids = [p.name for p in orignest]
+            permids = [p.name for p in perm]
+            newpermids = [p.name for p in newperm]
+            pragma = f"#pragma clang loop({','.join(nestids)}) interchange permutation({','.join(permids)}) permuted_ids({','.join(newpermids)})"
+            return [newperm[0]], [pragma], []
 
-                nestids = [p.name for p in orignest]
-                permids = [p.name for p in perm]
-                newpermids = [p.name for p in newperm]
-                pragma = f"#pragma clang loop({','.join(nestids)}) interchange permutation({','.join(permids)}) permuted_ids({','.join(newpermids)})"
-                return [newperm[0]], [pragma], []
-            return make_child
-
-        num_children = (n-1)
-        for i in range(1, n-1):
+        num_children = n-1
+        for i in range(1, n):
             num_children *= i
-        for d in range(1, n+1):
-            yield num_children, make_make_child_closure(d)
+        yield num_children, make_child
 
     def get_num_children(self):
         return self.num_children

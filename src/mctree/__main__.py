@@ -130,8 +130,67 @@ def autotune(parser, args):
             print("No more experiments!!?")
 
 
+
+def ccs_children_recursive(ts,max_depth=None, filter=None, descendfilter=None,path=[]):
+    tree = ts.get_node_at_position(path)
+    if filter and not filter(tree):
+        return
+    yield tree
+
+    if max_depth != None and max_depth == 0:
+        return
+    if descendfilter and not descendfilter(tree):
+        return
+
+    for i in range(tree.arity):            
+        yield from ccs_children_recursive(ts,max_depth=max_depth-1 if max_depth != None else None,filter=filter,descendfilter=descendfilter,path = path  + [i])
+
+
+def as_dot_from_ccs(ts ,max_depth=None, filter=None, descendfilter=None, loopneststructure=False):
+    yield 'digraph G {'
+    yield '  rankdir=LR;'
+    yield ''
+    for subtree in ccs_children_recursive(ts,max_depth=max_depth, filter=filter, descendfilter=descendfilter):
+        experiment = subtree.user_data
+        desc = ''.join(l + '\\l' for l in experiment.to_lines(printloopnest=loopneststructure))
+        if experiment.duration == math.inf:
+            fillcolor = 'lightpink:crimson'
+        elif experiment.duration != None:
+            fillcolor = 'darkseagreen1:lawngreen'
+        else:
+            fillcolor = 'azure:powderblue'
+
+        yield f'  n{id(subtree)}[shape=box color="grey30" penwidth=2 fillcolor="{fillcolor}" style="filled,rounded" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
+
+        if parent := subtree.parent:
+            yield f'  n{id(parent)} -> n{id(subtree)};'
+        yield ''
+
+    yield '}'
+
+
+
+
+def experiment_as_ccs(e):
+    def delete(tree_space):
+        print('### delete',file=sys.stderr)
+        return None
+
+    def get_child(ts, tree, idx):
+        e = tree.user_data
+        derived = e.get_child(idx)
+        subtree = derived.as_ccs()
+        return subtree
+
+    ccsroot = e.as_ccs()
+    ts = ccs.DynamicTreeSpace(name = 'mctree example', tree = ccsroot, delete = delete, get_child = get_child)
+    return ts
+
+
+
 @subcommand("example")
 def example(parser, args):
+    global ccs
     if parser:
         add_boolean_argument(parser,'loopneststructure')
     if args:
@@ -143,11 +202,16 @@ def example(parser, args):
         #outer.new_substmt()
 
         root = Experiment()
-        root.nestexperiments.append(LoopNestExperiment(example, [], loopcounter))
-
-        for line in as_dot(root, max_depth=args.maxdepth,loopneststructure=args.loopneststructure):
-            print(line)
-        return 0
+        root.nestexperiments.append(LoopNestExperiment(None, example, [],[], loopcounter=loopcounter))
+        
+        if ccs:
+            ts = experiment_as_ccs(root)
+            for line in as_dot_from_ccs(ts, max_depth=args.maxdepth,loopneststructure=args.loopneststructure):
+                print(line)
+        else:
+            for line in as_dot(root, max_depth=args.maxdepth,loopneststructure=args.loopneststructure):
+                print(line)
+            return 0
 
 
 
@@ -160,6 +224,9 @@ def jsonfile(parser, args):
         for line in as_dot(root, max_depth=args.maxdepth):
             print(line)
         return 0
+
+
+
 
 import mctree.ytoptgen as ytoptgen
 
@@ -174,7 +241,7 @@ def ytopt(parser, args):
 
 
 def main(argv: str) -> int:
-    global transformers 
+    global transformers,ccs
     parser = argparse.ArgumentParser(description="Loop transformation search tree proof-of-concept", allow_abbrev=False)
 
     parser.add_argument('--maxdepth', type=int, default=2)
@@ -192,13 +259,21 @@ def main(argv: str) -> int:
     parser.add_argument('--packing-arrays',action='append')
     add_boolean_argument(parser, "--fission", default=True)
     add_boolean_argument(parser, "--fusion", default=True)
+
     add_boolean_argument(parser, "--parametric", default=False)
+    add_boolean_argument(parser, "--ccs", default=False)
 
     subparsers = parser.add_subparsers(dest='subcommand')
     for cmd, func in commands.items():
         subparser = subparsers.add_parser(cmd)
         func(parser=subparser, args=None)
     args = parser.parse_args(str(v) for v in argv[1:])
+
+    if args.ccs:
+        ccs = enable_ccs()
+
+       
+
 
     if args.tiling:
         tilesizes = [4,16]
