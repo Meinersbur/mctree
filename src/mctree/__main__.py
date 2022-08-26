@@ -160,10 +160,10 @@ def as_dot_from_ccs(ts ,max_depth=None, filter=None, descendfilter=None, loopnes
         else:
             fillcolor = 'azure:powderblue'
 
-        yield f'  n{id(subtree)}[shape=box color="grey30" penwidth=2 fillcolor="{fillcolor}" style="filled,rounded" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
+        yield f'  n{subtree.handle.value}[shape=box color="grey30" penwidth=2 fillcolor="{fillcolor}" style="filled,rounded" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
 
         if parent := subtree.parent:
-            yield f'  n{id(parent)} -> n{id(subtree)};'
+            yield f'  n{parent.handle.value} -> n{subtree.handle.value};'
         yield ''
 
     yield '}'
@@ -173,7 +173,6 @@ def as_dot_from_ccs(ts ,max_depth=None, filter=None, descendfilter=None, loopnes
 
 def experiment_as_ccs(e):
     def delete(tree_space):
-        print('### delete',file=sys.stderr)
         return None
 
     def get_child(ts, tree, idx):
@@ -291,7 +290,7 @@ def main(argv: str) -> int:
         transformers.append(Reversal.get_factory())
     if args.unrolling:
         if args.unrolling_full:
-            transformers.append(UnrollingFull.get_factory(factors))   
+            transformers.append(UnrollingFull.get_factory())   
 
         factors = [2, 4, 8]
         if args.unrolling_factors != None:

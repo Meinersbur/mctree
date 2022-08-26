@@ -662,10 +662,10 @@ class Reversal:
 
 class UnrollingFull:
     @staticmethod
-    def get_factory(factors):
+    def get_factory():
         def factory(loop: Loop):
             if loop.isloop and loop.transformable:
-                return UnrollingFull(loop,factors)
+                return UnrollingFull(loop)
             return None
         return factory
 
@@ -681,7 +681,7 @@ class UnrollingFull:
             unrolled_loop = Loop.createAnonLoop()
             unrolled_loop.subloops = loop.subloops
             pragma = f"#pragma clang loop({self.loop.name}) unrolling full"
-            return [unrolled_loop], [pragma]
+            return [unrolled_loop], [pragma], []
 
         yield 1, make_full_unrolling
  
@@ -975,8 +975,8 @@ class Fission:
             head_loop.subloops = loop.subloops[:split_at]
             tail_loop = Loop.createLoop(name=f"tail{loopcounter.nextId()}")
             tail_loop.subloops = loop.subloops[split_at:]
-            pragma = f"#pragma clang loop({loop.name}) fission split_at({idx})"
-            return [head_loop,tail_loop], [pragma]
+            pragma = f"#pragma clang loop({loop.name}) fission split_at({idx}) fissioned_ids({head_loop.name},{tail_loop.name})" 
+            return [head_loop,tail_loop], [pragma], []
 
         yield subcount-1,make_fission
 
@@ -1042,7 +1042,7 @@ class Fusion:
 
             # Loop fusion is special as we transform the parent, but add the pragma applies to the children while the parent keeps its name. The parent also does not need to be 'transformable'
             pragma = f"#pragma clang loop({fuse_loops[0].name},{fuse_loops[1].name}) fuse fused_id({fused_loop.name})"
-            return [parent_loop], [pragma]
+            return [parent_loop], [pragma], []
 
         yield fusablecount,make_fusion
 
