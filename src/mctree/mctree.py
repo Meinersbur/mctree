@@ -49,12 +49,19 @@ def neighbors(seq):
 
 
 transformers = []
+max_depth = None
+def set_maxdepth(v:int ):
+    global max_depth
+    max_depth=v
+
 ccs = None
 def enable_ccs():
     global ccs
     import cconfigspace as ccs
     rng = ccs.Rng()
     return ccs
+
+
 
 class Loop:
     @classmethod
@@ -339,6 +346,7 @@ class Experiment:
 
                 newnestexp = nestexperiment.get_child(idx)
                 result = Experiment()
+                result.depth = self.depth+1
                 result.derived_from = self
                 result.nestexperiments = self.nestexperiments.copy()
                 result.nestexperiments[i] = newnestexp
@@ -351,9 +359,12 @@ class Experiment:
             yield nestexperiment.get_num_children(), make_make_child_closure(i,nestexperiment)
 
     def get_num_children(self):
+        if max_depth is not None and self.depth >= max_depth:
+            return 0
         return mcount(self.selector())
 
     def get_child(self, idx: int):
+        assert max_depth is None or self.depth < max_depth, "Should not request children if max_depth is reached"
         return mcall(self.selector(), None, idx=idx)
 
     def children(self):
@@ -398,6 +409,7 @@ class Experiment:
             isFirst = False
 
 
+    # FIXME: internal state depends on force_leaf 
     def as_ccs(self):
         if not self.ccs:
             arity = self.get_num_children()
@@ -1077,6 +1089,61 @@ def as_dot(baseexperiment: Experiment, max_depth=None, filter=None, decendfilter
         yield ''
 
     yield '}'
+
+
+def ccs_children_recursive(ts,max_depth=None, filter=None, descendfilter=None,path=[]):
+    tree = ts.get_node_at_position(path)
+    if filter and not filter(tree):
+        return
+    yield tree
+
+    if max_depth != None and max_depth == 0:
+        return
+    if descendfilter and not descendfilter(tree):
+        return
+
+    for i in range(tree.arity):            
+        yield from ccs_children_recursive(ts,max_depth=max_depth-1 if max_depth != None else None,filter=filter,descendfilter=descendfilter,path = path  + [i])
+
+
+def as_dot_from_ccs(ts ,max_depth=None, filter=None, descendfilter=None, loopneststructure=False):
+    yield 'digraph G {'
+    yield '  rankdir=LR;'
+    yield ''
+    for subtree in ccs_children_recursive(ts,max_depth=max_depth, filter=filter, descendfilter=descendfilter):
+        experiment = subtree.user_data
+        desc = ''.join(l + '\\l' for l in experiment.to_lines(printloopnest=loopneststructure))
+        if experiment.duration == math.inf:
+            fillcolor = 'lightpink:crimson'
+        elif experiment.duration != None:
+            fillcolor = 'darkseagreen1:lawngreen'
+        else:
+            fillcolor = 'azure:powderblue'
+
+        yield f'  n{subtree.handle.value}[shape=box color="grey30" penwidth=2 fillcolor="{fillcolor}" style="filled,rounded" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
+
+        if parent := subtree.parent:
+            yield f'  n{parent.handle.value} -> n{subtree.handle.value};'
+        yield ''
+
+    yield '}'
+
+
+
+def experiment_as_ccs(e):
+    def delete(tree_space):
+        return None
+
+    def get_child(ts, tree, idx):
+        e = tree.user_data
+        derived = e.get_child(idx)
+        subtree = derived.as_ccs()
+        return subtree
+
+    ccsroot = e.as_ccs()
+    ts = ccs.DynamicTreeSpace(name = 'mctree example', tree = ccsroot, delete = delete, get_child = get_child)
+    return ts
+
 
 
 

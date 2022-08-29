@@ -131,65 +131,12 @@ def autotune(parser, args):
 
 
 
-def ccs_children_recursive(ts,max_depth=None, filter=None, descendfilter=None,path=[]):
-    tree = ts.get_node_at_position(path)
-    if filter and not filter(tree):
-        return
-    yield tree
 
-    if max_depth != None and max_depth == 0:
-        return
-    if descendfilter and not descendfilter(tree):
-        return
-
-    for i in range(tree.arity):            
-        yield from ccs_children_recursive(ts,max_depth=max_depth-1 if max_depth != None else None,filter=filter,descendfilter=descendfilter,path = path  + [i])
-
-
-def as_dot_from_ccs(ts ,max_depth=None, filter=None, descendfilter=None, loopneststructure=False):
-    yield 'digraph G {'
-    yield '  rankdir=LR;'
-    yield ''
-    for subtree in ccs_children_recursive(ts,max_depth=max_depth, filter=filter, descendfilter=descendfilter):
-        experiment = subtree.user_data
-        desc = ''.join(l + '\\l' for l in experiment.to_lines(printloopnest=loopneststructure))
-        if experiment.duration == math.inf:
-            fillcolor = 'lightpink:crimson'
-        elif experiment.duration != None:
-            fillcolor = 'darkseagreen1:lawngreen'
-        else:
-            fillcolor = 'azure:powderblue'
-
-        yield f'  n{subtree.handle.value}[shape=box color="grey30" penwidth=2 fillcolor="{fillcolor}" style="filled,rounded" gradientangle=315 fontname="Calibri Light" label="{desc}"];'
-
-        if parent := subtree.parent:
-            yield f'  n{parent.handle.value} -> n{subtree.handle.value};'
-        yield ''
-
-    yield '}'
-
-
-
-
-def experiment_as_ccs(e):
-    def delete(tree_space):
-        return None
-
-    def get_child(ts, tree, idx):
-        e = tree.user_data
-        derived = e.get_child(idx)
-        subtree = derived.as_ccs()
-        return subtree
-
-    ccsroot = e.as_ccs()
-    ts = ccs.DynamicTreeSpace(name = 'mctree example', tree = ccsroot, delete = delete, get_child = get_child)
-    return ts
 
 
 
 @subcommand("example")
 def example(parser, args):
-    global ccs
     if parser:
         add_boolean_argument(parser,'loopneststructure')
     if args:
@@ -205,12 +152,12 @@ def example(parser, args):
         
         if ccs:
             ts = experiment_as_ccs(root)
-            for line in as_dot_from_ccs(ts, max_depth=args.maxdepth,loopneststructure=args.loopneststructure):
+            for line in as_dot_from_ccs(ts, loopneststructure=args.loopneststructure):
                 print(line)
         else:
-            for line in as_dot(root, max_depth=args.maxdepth,loopneststructure=args.loopneststructure):
+            for line in as_dot(root, loopneststructure=args.loopneststructure):
                 print(line)
-            return 0
+        return 0
 
 
 
@@ -220,8 +167,14 @@ def jsonfile(parser, args):
         parser.add_argument('filename', nargs='+')
     if args:
         root = read_json(files=args.filename)
-        for line in as_dot(root, max_depth=args.maxdepth):
-            print(line)
+
+        if ccs:
+            ts = experiment_as_ccs(root, max_depth=args.maxdepth)
+            for line in as_dot_from_ccs(ts):
+                print(line)
+        else:
+            for line in as_dot(root, max_depth=args.maxdepth):
+                print(line)
         return 0
 
 
@@ -271,7 +224,7 @@ def main(argv: str) -> int:
     if args.ccs:
         ccs = enable_ccs()
 
-       
+    set_maxdepth(args.maxdepth)
 
 
     if args.tiling:
