@@ -58,7 +58,6 @@ ccs = None
 def enable_ccs():
     global ccs
     import cconfigspace as ccs
-    rng = ccs.Rng()
     return ccs
 
 
@@ -361,7 +360,8 @@ class Experiment:
     def get_num_children(self):
         if max_depth is not None and self.depth >= max_depth:
             return 0
-        return mcount(self.selector())
+        result =  mcount(self.selector())
+        return result
 
     def get_child(self, idx: int):
         assert max_depth is None or self.depth < max_depth, "Should not request children if max_depth is reached"
@@ -950,7 +950,7 @@ class ArrayPacking:
             packed_loop = Loop.createAnonLoop()
             packed_loop.subloops = self.loop.subloops
             pragma = f"#pragma clang loop({self.loop.name}) pack array({self.arrays[idx]})"
-            return [packed_loop], [pragma]         
+            return [packed_loop], [pragma], []         
 
         yield len(self.arrays), make_array_packing
 
@@ -1142,6 +1142,7 @@ def experiment_as_ccs(e):
 
     ccsroot = e.as_ccs()
     ts = ccs.DynamicTreeSpace(name = 'mctree example', tree = ccsroot, delete = delete, get_child = get_child)
+    ts.    rng = ccs.Rng()
     return ts
 
 
@@ -1252,7 +1253,6 @@ def extract_loopnests(tempdir, ccargs, execopts):
     loopnestfiles = [f for f in loopnestfiles if f.is_file()]
     root = read_json(files=loopnestfiles)
     root.expnumber = 0
-    root.depth = 1
 
     run_exec(experiment=root,cwd=extractloopnest,exefile=exefile,execopts=execopts)
 

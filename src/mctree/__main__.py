@@ -33,27 +33,31 @@ def autotune(parser, args):
                             help="Max exec time in seconds; default is no timout")
         parser.add_argument('ccline', nargs=argparse.REMAINDER)
     if args:
-        ccargs = parse_cc_cmdline(args.ccline)
-        ccargs.polybench_time = args.polybench_time
+        mctree_autotune(ccline = args.ccline, exec_args=shcombine(arg=args.exec_arg,args=args.exec_args),polybench_time=args.polybench_time,ld_library_path=args.ld_library_path,timeout=args.timeout,outdir=args.outdir,keep=args.keep)
+
+
+def mctree_autotune(ccline,exec_args,polybench_time,ld_library_path,timeout,outdir,keep):
+        ccargs = parse_cc_cmdline(ccline)
+        ccargs.polybench_time = polybench_time
 
         execopts = argparse.Namespace()
 
         execopts.ld_library_path = None
-        if args.ld_library_path != None:
-            execopts.ld_library_path = ':'.join(args.ld_library_path)
+        if ld_library_path != None:
+            execopts.ld_library_path = ':'.join(ld_library_path)
 
         execopts.timeout = None
-        if args.timeout != None:
-            execopts.timeout = datetime.timedelta(seconds=args.timeout)
-        execopts.polybench_time = args.polybench_time
+        if timeout != None:
+            execopts.timeout = datetime.timedelta(seconds=timeout)
+        execopts.polybench_time = polybench_time
 
-        execopts.args = shcombine(arg=args.exec_arg,args=args.exec_args)
+        execopts.args = exec_args
 
-        outdir = mkpath(args.outdir)
+        outdir = mkpath(outdir)
         num_experiments = 0
 
         with contextlib.ExitStack() as stack:
-            if args.keep:
+            if keep:
                 d = tempfile.mkdtemp(dir=outdir, prefix='mctree-')
             else:
                 d = stack.enter_context(tempfile.TemporaryDirectory(dir=outdir, prefix='mctree-'))
@@ -70,67 +74,107 @@ def autotune(parser, args):
             print(root)
             print("")
 
-            def priorotyfunc(x): 
-                return -math.inf if x.duration is None else x.duration.total_seconds()
-            pq = PriorityQueue(root, key=priorotyfunc)
-            closed = set()
             bestsofar = root
-
             csvlog.write(f"{root.expnumber},{root.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
             newbestlog.write(f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+            def update_best(item):
+                nonlocal bestsofar
+                if item.duration == math.inf:
+                        return 
 
-            while not pq.empty():
-                item = pq.top()
+                if bestsofar.duration > item.duration:
+                    print(
+                        f"New experiment better than old (old: {bestsofar.duration}, new: {item.duration})")
+                    print(f"Path {item.exppath}\n")
+                    print(item)
+                    bestsofar = item
+                    with bestfile.open('w+') as f:
+                        f.write(f"Best experiment so far\n")
+                        f.write(f"Time: {bestsofar.duration}\n")
+                        f.write(f"Path: {bestsofar.exppath}\n\n")
+                        for line in bestsofar.to_lines():
+                            f.write(line)
+                            f.write('\n')
+                    newbestlog.write(f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+                    newbestlog.flush()
+                csvlog.write(f"{item.expnumber},{item.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
+                csvlog.flush()
 
-                if item.duration == None:
+            if ccs:
+                ts = experiment_as_ccs(root)
+                os = ccs.ObjectiveSpace(name = "ospace")
+                v1 = ccs.NumericalHyperparameter(lower = float(0), upper = float('inf'))
+                os.add_hyperparameters([v1])
+                e1 = ccs.Variable(hyperparameter = v1)
+                os.add_objectives( { e1: ccs.MINIMIZE } )
+                
+                t = ccs.RandomTreeTuner(name = "random search", tree_space = ts, objective_space = os)
+                rootev = ccs.TreeEvaluation(objective_space = os, configuration = ccs.TreeConfiguration(tree_space = ts, position = []), values = [root.duration.total_seconds()] )
+                t.tell([rootev])
+
+                while True:
+                    next = t.ask()[0]
+                    item = next.node.user_data
+                    print("Selected:", next.position)
+
+                    if item.duration !=None:                        
+                        print("Already evaluated:",item)
+                        continue 
+
                     num_experiments += 1
                     run_experiment(d, item, ccargs=ccargs, execopts=execopts, 
-                        writedot=num_experiments < 30, 
+                        writedot=False, 
                         dotfilter=None,
-                        dotexpandfilter=lambda n: n in closed,
+                        dotexpandfilter=None,
                         root=root)
                     if item.duration == math.inf:
-                        # Invalid pragmas? Remove experiment entirely
                         print("Experiment failed")
-                        pq.pop()
+                        ev = ccs.TreeEvaluation(objective_space = os, configuration = next, values = [math.inf] )
+                        next.node.weight = 0
+                        next.node.bias = 0
+                    else:
+                        ev = ccs.TreeEvaluation(objective_space = os, configuration = next, values = [item.duration.total_seconds()] )
+                    t.tell([ev])
+                    update_best(item)
+            else:
+                def priorotyfunc(x): 
+                    return -math.inf if x.duration is None else x.duration.total_seconds()
+                pq = PriorityQueue(root, key=priorotyfunc)
+                closed = set()
+
+                while not pq.empty():
+                    item = pq.top()
+
+                    if item.duration == None:
+                        num_experiments += 1
+                        run_experiment(d, item, ccargs=ccargs, execopts=execopts, 
+                            writedot=num_experiments < 30, 
+                            dotfilter=None,
+                            dotexpandfilter=lambda n: n in closed,
+                            root=root)
+                        if item.duration == math.inf:
+                            # Invalid pragmas? Remove experiment entirely
+                            print("Experiment failed")
+                            pq.pop()
+                            continue
+
+                        pq.update()
+                        update_best(item)
                         continue
 
-                    pq.update()
-                    if bestsofar.duration > item.duration:
-                        print(
-                            f"New experiment better than old (old: {bestsofar.duration}, new: {item.duration})")
-                        print(f"Path {item.exppath}\n")
-                        print(item)
-                        bestsofar = item
-                        with bestfile.open('w+') as f:
-                            f.write(f"Best experiment so far\n")
-                            f.write(f"Time: {bestsofar.duration}\n")
-                            f.write(f"Path: {bestsofar.exppath}\n\n")
-                            for line in bestsofar.to_lines():
-                                f.write(line)
-                                f.write('\n')
-                        newbestlog.write(f"{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
-                        newbestlog.flush()
-                    csvlog.write(f"{item.expnumber},{item.duration.total_seconds()},{bestsofar.expnumber},{bestsofar.duration.total_seconds()}\n")
-                    csvlog.flush()
-                    continue
 
+                    if not item in closed:
+                        print(f"Selecting best experiment {item.duration} for expansion")
+                        for child in item.children():
+                            pq.push(child)
 
-                if not item in closed:
-                    print(f"Selecting best experiment {item.duration} for expansion")
-                    for child in item.children():
-                        pq.push(child)
+                        closed.add(item)
+                        continue
 
-                    closed.add(item)
-                    continue
-
-                if item in closed and item.duration != None:
-                    pq.pop()
+                    if item in closed and item.duration != None:
+                        pq.pop()
 
             print("No more experiments!!?")
-
-
-
 
 
 
